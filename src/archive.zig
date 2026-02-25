@@ -1,4 +1,5 @@
 const std = @import("std");
+const ar = @import("ar.zig");
 
 pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []const u8) !void {
     var client = std.http.Client{ .allocator = allocator };
@@ -78,6 +79,31 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
     if (std.ascii.endsWithIgnoreCase(original_url, ".zip")) {
         try std.zip.extract(out_dir, file.seekableStream(), .{});
         return true;
+    } else if (std.ascii.endsWithIgnoreCase(original_url, ".deb")) {
+        // Find whichever data.tar.* member exists
+        
+        // First try finding data.tar.gz, .xz, .zst... extractArMemberByPrefix does a prefix match!
+        // so "data.tar" will match "data.tar.gz" and extract it.
+        const ar_out = try std.fs.path.join(allocator, &.{ out_dir_path, "_data_tar_from_deb" });
+        defer allocator.free(ar_out);
+
+        if (try ar.extractArMemberByPrefix(archive_path, "data.tar", ar_out)) {
+            defer std.fs.cwd().deleteFile(ar_out) catch {};
+            
+            // To pass back into extractNative, it needs to guess compression by extension.
+            // Ar doesn't tell us the extension easily with this simple parser since we only matched prefix.
+            // For now, let's just attempt to decompress it via system tar since tar auto-detects compression
+            // better than anything without extensions. Or we can just fallback to standard tar on the inner tarball!
+            const argv = &[_][]const u8{ "tar", "-xf", ar_out, "-C", out_dir_path };
+            var child = std.process.Child.init(argv, allocator);
+            child.stdout_behavior = .Ignore;
+            child.stderr_behavior = .Inherit;
+            const term = try child.spawnAndWait();
+            if (term != .Exited or term.Exited != 0) return error.ExtractFailed;
+            return true;
+        } else {
+            return error.DebDataMissing;
+        }
     } else if (std.ascii.endsWithIgnoreCase(original_url, ".tar.gz") or std.ascii.endsWithIgnoreCase(original_url, ".tgz")) {
         var gzip_stream = std.compress.gzip.decompressor(file.reader());
         try std.tar.pipeToFileSystem(out_dir, gzip_stream.reader(), .{ .mode_mode = .executable_bit_only });

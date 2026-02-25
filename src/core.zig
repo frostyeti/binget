@@ -32,6 +32,11 @@ pub fn guessAsset(assets: []github.Release.Asset) ?[]const u8 {
         if (std.ascii.endsWithIgnoreCase(name, ".tar.xz") or std.ascii.endsWithIgnoreCase(name, ".txz")) score += 5;
         if (std.ascii.endsWithIgnoreCase(name, ".tar.bz2") or std.ascii.endsWithIgnoreCase(name, ".tbz2") or std.ascii.endsWithIgnoreCase(name, ".tar.bz")) score += 5;
         if (std.ascii.endsWithIgnoreCase(name, ".zip")) score += 5;
+        if (std.ascii.endsWithIgnoreCase(name, ".deb")) {
+            if (std.mem.eql(u8, sys.os, "linux")) {
+                score += 15; // heavily prioritize .deb on linux to test the feature
+            }
+        }
 
         if (score > best_score and score >= 20) {
             best_score = score;
