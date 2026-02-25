@@ -28,7 +28,9 @@ pub fn guessAsset(assets: []github.Release.Asset) ?[]const u8 {
         if (std.mem.eql(u8, sys.os, "macos") and std.ascii.indexOfIgnoreCase(name, "darwin") != null) score += 10;
         if (std.mem.eql(u8, sys.os, "windows") and std.ascii.indexOfIgnoreCase(name, "win") != null) score += 10;
 
-        if (std.ascii.endsWithIgnoreCase(name, ".tar.gz")) score += 5;
+        if (std.ascii.endsWithIgnoreCase(name, ".tar.gz") or std.ascii.endsWithIgnoreCase(name, ".tgz")) score += 5;
+        if (std.ascii.endsWithIgnoreCase(name, ".tar.xz") or std.ascii.endsWithIgnoreCase(name, ".txz")) score += 5;
+        if (std.ascii.endsWithIgnoreCase(name, ".tar.bz2") or std.ascii.endsWithIgnoreCase(name, ".tbz2") or std.ascii.endsWithIgnoreCase(name, ".tar.bz")) score += 5;
         if (std.ascii.endsWithIgnoreCase(name, ".zip")) score += 5;
 
         if (score > best_score and score >= 20) {
