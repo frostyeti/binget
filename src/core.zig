@@ -78,7 +78,7 @@ pub fn installPackage(allocator: std.mem.Allocator, db_conn: db.Database, target
 
     const extract_dir = try std.fs.path.join(allocator, &.{ tmp_dir_path, "extracted" });
     defer allocator.free(extract_dir);
-    try archive.extractArchive(allocator, archive_path, extract_dir);
+    try archive.extractArchive(allocator, archive_path, extract_dir, url);
 
     const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", repo, release.tag_name });
     defer allocator.free(pkg_dir);
