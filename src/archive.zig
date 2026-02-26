@@ -6,39 +6,31 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []c
     defer client.deinit();
 
     const uri = try std.Uri.parse(url);
-    var server_header_buffer: [8192]u8 = undefined;
 
-    var req = try client.open(.GET, uri, .{
-        .server_header_buffer = &server_header_buffer,
+    var req = try client.request(.GET, uri, .{
+        .redirect_behavior = @enumFromInt(5), // allow 5 redirects
     });
     defer req.deinit();
 
-    try req.send();
-    try req.finish();
-    try req.wait();
+    try req.sendBodiless();
+    
+    var redirect_buf: [8192]u8 = undefined;
+    var res = try req.receiveHead(&redirect_buf);
 
-    if (req.response.status != .ok) {
-        if (req.response.status == .found or req.response.status == .see_other or req.response.status == .temporary_redirect) {
-            var iter = req.response.iterateHeaders();
-            while (iter.next()) |header| {
-                if (std.ascii.eqlIgnoreCase(header.name, "location")) {
-                    return downloadFile(allocator, header.value, out_path);
-                }
-            }
-        }
-        std.debug.print("Download failed with status {}\n", .{req.response.status});
+    if (res.head.status != .ok) {
+        std.debug.print("Download failed with status {}\n", .{res.head.status});
         return error.HttpFailed;
     }
 
     var file = try std.fs.cwd().createFile(out_path, .{});
     defer file.close();
+    var write_buf: [8192]u8 = undefined;
+    var file_writer = file.writer(&write_buf);
 
-    var buffer: [8192]u8 = undefined;
-    while (true) {
-        const bytes_read = try req.reader().read(&buffer);
-        if (bytes_read == 0) break;
-        try file.writeAll(buffer[0..bytes_read]);
-    }
+    var transfer_buf: [8192]u8 = undefined;
+    const downloaded_size = try res.reader(&transfer_buf).streamRemaining(&file_writer.interface);
+    try file_writer.interface.flush();
+    std.debug.print("Downloaded {} bytes.\n", .{downloaded_size});
 }
 
 pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, out_dir_path: []const u8, original_url: []const u8) !void {
@@ -77,49 +69,38 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
     defer file.close();
 
     if (std.ascii.endsWithIgnoreCase(original_url, ".zip")) {
-        try std.zip.extract(out_dir, file.seekableStream(), .{});
+        var read_buf: [8192]u8 = undefined;
+        var file_reader = file.reader(&read_buf);
+        try std.zip.extract(out_dir, &file_reader, .{});
         return true;
     } else if (std.ascii.endsWithIgnoreCase(original_url, ".deb")) {
-        // Find whichever data.tar.* member exists
-        
-        // First try finding data.tar.gz, .xz, .zst... extractArMemberByPrefix does a prefix match!
-        // so "data.tar" will match "data.tar.gz" and extract it.
         const ar_out = try std.fs.path.join(allocator, &.{ out_dir_path, "_data_tar_from_deb" });
         defer allocator.free(ar_out);
 
         if (try ar.extractArMemberByPrefix(archive_path, "data.tar", ar_out)) {
-            defer std.fs.cwd().deleteFile(ar_out) catch {};
-            
-            // To pass back into extractNative, it needs to guess compression by extension.
-            // Ar doesn't tell us the extension easily with this simple parser since we only matched prefix.
-            // For now, let's just attempt to decompress it via system tar since tar auto-detects compression
-            // better than anything without extensions. Or we can just fallback to standard tar on the inner tarball!
-            const argv = &[_][]const u8{ "tar", "-xf", ar_out, "-C", out_dir_path };
-            var child = std.process.Child.init(argv, allocator);
-            child.stdout_behavior = .Ignore;
-            child.stderr_behavior = .Inherit;
-            const term = try child.spawnAndWait();
-            if (term != .Exited or term.Exited != 0) return error.ExtractFailed;
-            return true;
-        } else {
-            return error.DebDataMissing;
+            const is_success = try extractNative(allocator, ar_out, out_dir_path, ar_out);
+            std.fs.cwd().deleteFile(ar_out) catch {};
+            return is_success;
         }
+        return false;
     } else if (std.ascii.endsWithIgnoreCase(original_url, ".tar.gz") or std.ascii.endsWithIgnoreCase(original_url, ".tgz")) {
-        var gzip_stream = std.compress.gzip.decompressor(file.reader());
-        try std.tar.pipeToFileSystem(out_dir, gzip_stream.reader(), .{ .mode_mode = .executable_bit_only });
-        return true;
-    } else if (std.ascii.endsWithIgnoreCase(original_url, ".tar.xz") or std.ascii.endsWithIgnoreCase(original_url, ".txz")) {
-        var xz_stream = try std.compress.xz.decompress(allocator, file.reader());
-        defer xz_stream.deinit();
-        try std.tar.pipeToFileSystem(out_dir, xz_stream.reader(), .{ .mode_mode = .executable_bit_only });
+        var read_buf: [8192]u8 = undefined;
+        var file_reader = file.reader(&read_buf);
+        var decompress_buf: [65536]u8 = undefined;
+        var gzip_stream = std.compress.flate.Decompress.init(&file_reader.interface, .gzip, &decompress_buf);
+        std.tar.pipeToFileSystem(out_dir, &gzip_stream.reader, .{ .mode_mode = .executable_bit_only }) catch |err| {
+            std.debug.print("Native tar.gz extraction failed ({}), falling back to system tar...\n", .{err});
+            return false;
+        };
         return true;
     } else if (std.ascii.endsWithIgnoreCase(original_url, ".tar")) {
-        try std.tar.pipeToFileSystem(out_dir, file.reader(), .{ .mode_mode = .executable_bit_only });
+        var read_buf: [8192]u8 = undefined;
+        var file_reader = file.reader(&read_buf);
+        try std.tar.pipeToFileSystem(out_dir, &file_reader.interface, .{ .mode_mode = .executable_bit_only });
         return true;
     }
     
-    // Zig 0.13.0 standard library does not natively support bzip2.
-    // If it's .tar.bz2 or unrecognized, return false so we fallback to system tar.
+    // Fallback to system tar for xz, bzip2, etc.
     return false;
 }
 

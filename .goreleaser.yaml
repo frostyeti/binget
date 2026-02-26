@@ -1,0 +1,68 @@
+version: 2
+
+project_name: binget
+
+builds:
+  - builder: zig
+    flags:
+      - -Doptimize=ReleaseSafe
+    targets:
+      - x86_64-linux-gnu
+      - x86_64-windows-gnu
+      - aarch64-linux-gnu
+      - aarch64-macos-none
+      - x86_64-macos-none
+
+archives:
+  - format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    format_overrides:
+      - goos: windows
+        format: zip
+
+nfpms:
+  - formats:
+      - deb
+      - rpm
+      - apk
+    maintainer: "Binget Authors <email@example.com>"
+    description: "Binget package manager"
+    bindir: /usr/bin
+
+brews:
+  - repository:
+      owner: binget-org
+      name: homebrew-tap
+    directory: Formula
+    commit_author:
+      name: binget-bot
+      email: bot@example.com
+
+scoops:
+  - repository:
+      owner: binget-org
+      name: scoop-bucket
+    directory: bucket
+    commit_author:
+      name: binget-bot
+      email: bot@example.com
+
+chocolateys:
+  - name: binget
+    title: binget
+    authors: binget
+    project_url: https://github.com/binget-org/binget
+    description: A cross-platform package manager
+    skip_publish: true
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"

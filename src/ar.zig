@@ -10,19 +10,20 @@ pub fn extractArMemberByPrefix(
     var file = try std.fs.cwd().openFile(archive_path, .{});
     defer file.close();
     
-    var reader = file.reader();
+    var read_buf: [8192]u8 = undefined;
+    var reader = file.reader(&read_buf);
 
     // Check magic signature "!<arch>\n"
     var magic: [8]u8 = undefined;
-    const read_magic = try reader.readAll(&magic);
-    if (read_magic != 8 or !std.mem.eql(u8, &magic, "!<arch>\n")) {
+    try reader.interface.readSliceAll(&magic);
+    if (!std.mem.eql(u8, &magic, "!<arch>\n")) {
         return error.NotAnArArchive;
     }
 
     // Read headers
     while (true) {
         var header: [60]u8 = undefined;
-        const bytes_read = try reader.readAll(&header);
+        const bytes_read = try reader.interface.readSliceShort(&header);
         if (bytes_read == 0) break; // EOF
         if (bytes_read != 60) return error.MalformedArHeader;
 
@@ -52,7 +53,7 @@ pub fn extractArMemberByPrefix(
             var remaining = size;
             while (remaining > 0) {
                 const to_read = @min(buffer.len, remaining);
-                const r = try reader.readAll(buffer[0..to_read]);
+                const r = try reader.interface.readSliceShort(buffer[0..to_read]);
                 if (r == 0) return error.UnexpectedEofInArMember;
                 try out_file.writeAll(buffer[0..r]);
                 remaining -= r;
@@ -62,7 +63,7 @@ pub fn extractArMemberByPrefix(
             // Skip this member. Ar members are padded to an even byte boundary.
             var skip = size;
             if (size % 2 != 0) skip += 1;
-            try file.seekBy(@intCast(skip));
+            try reader.interface.discardAll64(skip);
         }
     }
 

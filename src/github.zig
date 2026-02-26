@@ -11,48 +11,60 @@ pub const Release = struct {
 };
 
 pub fn fetchLatestRelease(allocator: std.mem.Allocator, owner: []const u8, repo: []const u8) !Release {
+    const url_str = try std.fmt.allocPrint(allocator, "https://api.github.com/repos/{s}/{s}/releases/latest", .{ owner, repo });
+    defer allocator.free(url_str);
+    return fetchReleaseByUrl(allocator, url_str);
+}
+
+pub fn fetchReleaseByTag(allocator: std.mem.Allocator, owner: []const u8, repo: []const u8, tag: []const u8) !Release {
+    const url_str = try std.fmt.allocPrint(allocator, "https://api.github.com/repos/{s}/{s}/releases/tags/{s}", .{ owner, repo, tag });
+    defer allocator.free(url_str);
+    return fetchReleaseByUrl(allocator, url_str);
+}
+
+fn fetchReleaseByUrl(allocator: std.mem.Allocator, url_str: []const u8) !Release {
     var client = std.http.Client{ .allocator = allocator };
     defer client.deinit();
 
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
+
     const token = env_map.get("GITHUB_TOKEN");
-
-    const url_str = try std.fmt.allocPrint(allocator, "https://api.github.com/repos/{s}/{s}/releases/latest", .{ owner, repo });
-    defer allocator.free(url_str);
-
     const uri = try std.Uri.parse(url_str);
-    var server_header_buffer: [8192]u8 = undefined;
 
-    var headers = std.ArrayList(std.http.Header).init(allocator);
-    defer headers.deinit();
+    var headers = std.ArrayList(std.http.Header).empty;
+    defer headers.deinit(allocator);
 
-    try headers.append(.{ .name = "User-Agent", .value = "binget/0.1.0 (Zig)" });
-    try headers.append(.{ .name = "Accept", .value = "application/vnd.github.v3+json" });
-    
-    var auth_header: []u8 = undefined;
+    try headers.append(allocator, .{ .name = "Accept", .value = "application/vnd.github.v3+json" });
+    try headers.append(allocator, .{ .name = "User-Agent", .value = "binget" });
+
+    var auth_header: []const u8 = undefined;
     if (token) |t| {
         auth_header = try std.fmt.allocPrint(allocator, "Bearer {s}", .{t});
-        try headers.append(.{ .name = "Authorization", .value = auth_header });
+        try headers.append(allocator, .{ .name = "Authorization", .value = auth_header });
     }
     defer if (token != null) allocator.free(auth_header);
 
-    var req = try client.open(.GET, uri, .{
-        .server_header_buffer = &server_header_buffer,
+    var req = try client.request(.GET, uri, .{
         .extra_headers = headers.items,
     });
     defer req.deinit();
 
-    try req.send();
-    try req.finish();
-    try req.wait();
+    try req.sendBodiless();
+    
+    var redirect_buf: [8192]u8 = undefined;
+    var res = try req.receiveHead(&redirect_buf);
 
-    if (req.response.status != .ok) {
-        std.debug.print("GitHub API failed with status {}\n", .{req.response.status});
+    if (res.head.status != .ok) {
+        std.debug.print("GitHub API failed with status {}\n", .{res.head.status});
         return error.HttpFailed;
     }
 
-    const body = try req.reader().readAllAlloc(allocator, 1024 * 1024 * 5); // Max 5MB release json
+    var transfer_buf: [8192]u8 = undefined;
+    var decompress_buf: [65536]u8 = undefined;
+    var decompress: std.http.Decompress = undefined;
+    const limit: std.io.Limit = @enumFromInt(1024 * 1024 * 5);
+    const body = try res.readerDecompressing(&transfer_buf, &decompress, &decompress_buf).allocRemaining(allocator, limit);
     defer allocator.free(body);
 
     const parsed = try std.json.parseFromSlice(std.json.Value, allocator, body, .{});

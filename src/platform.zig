@@ -98,6 +98,10 @@ pub fn getInstallDir(allocator: std.mem.Allocator, global: bool) ![]const u8 {
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
 
+    if (env_map.get("BINGET_BIN")) |bin_dir| {
+        return allocator.dupe(u8, bin_dir);
+    }
+
     if (global) {
         if (builtin.os.tag == .windows) {
             return std.fs.path.join(allocator, &.{ "C:\\Program Files", "bin" });
@@ -119,6 +123,10 @@ pub fn getBingetShareDir(allocator: std.mem.Allocator) ![]const u8 {
     const builtin = @import("builtin");
     var env_map = try std.process.getEnvMap(allocator);
     defer env_map.deinit();
+
+    if (env_map.get("BINGET_ROOT")) |root| {
+        return allocator.dupe(u8, root);
+    }
 
     if (builtin.os.tag == .windows) {
         const appdata = env_map.get("LOCALAPPDATA") orelse try std.fs.path.join(allocator, &.{ env_map.get("USERPROFILE") orelse "C:\\", "AppData", "Local" });

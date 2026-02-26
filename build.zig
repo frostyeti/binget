@@ -7,9 +7,11 @@ pub fn build(b: *std.Build) void {
     // Main executable
     const exe = b.addExecutable(.{
         .name = "binget",
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
 
     // Add SQLite C dependency
@@ -41,9 +43,11 @@ pub fn build(b: *std.Build) void {
 
     // Tests
     const exe_unit_tests = b.addTest(.{
-        .root_source_file = b.path("src/main.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     
     // Have to add same dependencies to tests
@@ -74,9 +78,11 @@ pub fn build(b: *std.Build) void {
         const resolved_target = b.resolveTargetQuery(t);
         const cross_exe = b.addExecutable(.{
             .name = b.fmt("binget-{s}-{s}", .{ @tagName(t.cpu_arch.?), @tagName(t.os_tag.?) }),
-            .root_source_file = b.path("src/main.zig"),
-            .target = resolved_target,
-            .optimize = .ReleaseSafe,
+            .root_module = b.createModule(.{
+                .root_source_file = b.path("src/main.zig"),
+                .target = resolved_target,
+                .optimize = .ReleaseSafe,
+            }),
         });
 
         cross_exe.addCSourceFile(.{
