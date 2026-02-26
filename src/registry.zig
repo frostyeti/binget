@@ -17,11 +17,15 @@ pub const VersionsFile = struct {
     versions: []VersionInfo,
 };
 
-fn getRegistryUrl() []const u8 {
-    if (std.posix.getenv("BINGET_REGISTRY_URL")) |url| {
+fn getRegistryUrl(allocator: std.mem.Allocator) ![]const u8 {
+    if (std.process.getEnvVarOwned(allocator, "BINGET_REGISTRY_URL")) |url| {
         return url;
+    } else |err| {
+        switch (err) {
+            error.EnvironmentVariableNotFound => return try allocator.dupe(u8, "https://raw.githubusercontent.com/frostyeti/binget-pkgs/dev"),
+            else => return err,
+        }
     }
-    return "https://raw.githubusercontent.com/frostyeti/binget-pkgs/dev";
 }
 
 fn getFirstChar(id: []const u8) u8 {
@@ -33,7 +37,9 @@ pub fn fetchVersions(allocator: std.mem.Allocator, id: []const u8) !VersionsFile
     defer client.deinit();
 
     const char = getFirstChar(id);
-    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/versions.json", .{ getRegistryUrl(), char, id });
+    const reg_url = try getRegistryUrl(allocator);
+    defer allocator.free(reg_url);
+    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/versions.json", .{ reg_url, char, id });
     defer allocator.free(url);
 
     const uri = try std.Uri.parse(url);
@@ -275,7 +281,9 @@ pub fn fetchPlatformManifest(allocator: std.mem.Allocator, id: []const u8, versi
     defer client.deinit();
 
     const char = getFirstChar(id);
-    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/{s}/manifest.{s}.json", .{ getRegistryUrl(), char, id, version, platform });
+    const reg_url = try getRegistryUrl(allocator);
+    defer allocator.free(reg_url);
+    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/{s}/manifest.{s}.json", .{ reg_url, char, id, version, platform });
     defer allocator.free(url);
 
     const uri = try std.Uri.parse(url);
