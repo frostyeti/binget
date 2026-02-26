@@ -246,29 +246,53 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     defer registry.freePlatformManifest(allocator, manifest);
     
     var active_mode: ?registry.InstallModeConfig = null;
+    var final_mode = mode;
+
     switch (mode) {
-        .shim => active_mode = manifest.install_modes.shim,
-        .user => active_mode = manifest.install_modes.user,
-        .global => active_mode = manifest.install_modes.global,
+        .shim => {
+            active_mode = manifest.install_modes.shim;
+            if (active_mode == null) {
+                active_mode = manifest.install_modes.user;
+                final_mode = .user;
+            }
+        },
+        .user => {
+            active_mode = manifest.install_modes.user;
+            if (active_mode == null) {
+                active_mode = manifest.install_modes.shim;
+                final_mode = .shim;
+            }
+        },
+        .global => {
+            active_mode = manifest.install_modes.global;
+            if (active_mode == null) {
+                active_mode = manifest.install_modes.user;
+                final_mode = .user;
+            }
+            if (active_mode == null) {
+                active_mode = manifest.install_modes.shim;
+                final_mode = .shim;
+            }
+        },
     }
     
     if (active_mode == null) {
-        std.debug.print("Error: The requested install mode is not supported by the manifest for this platform.\n", .{});
+        std.debug.print("Error: No valid install mode is supported by the manifest for this platform.\n", .{});
         return error.UnsupportedInstallMode;
     }
     
     const config = active_mode.?;
-    std.debug.print("Executing installation type: {s}\n", .{config.type});
+    std.debug.print("Executing installation type: {s} (mode: {s})\n", .{config.type, @tagName(final_mode)});
 
     if (std.mem.eql(u8, config.type, "raw")) {
-        try executeRawInstall(allocator, db_conn, id, version_to_install, config, mode);
+        try executeRawInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "runtime")) {
-        try executeRuntimeInstall(allocator, db_conn, id, version_to_install, config, mode);
+        try executeRuntimeInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "archive")) {
-        try executeArchiveInstall(allocator, db_conn, id, version_to_install, config, mode);
+        try executeArchiveInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "installer")) {
         std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{id, config.format orelse "unknown"});
-        try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, mode);
+        try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew")) {
         std.debug.print("Proxying installation to system package manager ({s})...\n", .{config.type});
         
