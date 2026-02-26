@@ -290,6 +290,8 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         try executeRuntimeInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "archive")) {
         try executeArchiveInstall(allocator, db_conn, id, version_to_install, config, final_mode);
+    } else if (std.mem.eql(u8, config.type, "build")) {
+        try executeBuildInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "installer")) {
         std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{id, config.format orelse "unknown"});
         try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, final_mode);
@@ -692,4 +694,132 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
             try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
         }
     }
+}
+
+fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
+    if (config.url == null) return error.InvalidManifest;
+    
+    const url = config.url.?;
+    const format = config.format orelse "unknown";
+
+    const engine = config.build_engine orelse "zig";
+    std.debug.print("Build engine configured as '{s}'\n", .{engine});
+    
+    const share_dir = try platform.getBingetShareDir(allocator);
+    defer allocator.free(share_dir);
+
+    const tmp_dir_path = try std.fs.path.join(allocator, &.{ share_dir, ".tmp" });
+    defer allocator.free(tmp_dir_path);
+    try std.fs.cwd().makePath(tmp_dir_path);
+
+    const archive_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, try std.fmt.allocPrint(allocator, "{s}-src.{s}", .{id, format}) });
+    defer allocator.free(archive_path);
+
+    std.debug.print("Downloading source: {s}\n", .{url});
+    try archive.downloadFile(allocator, url, archive_path);
+    defer std.fs.cwd().deleteFile(archive_path) catch {};
+
+    const extract_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, try std.fmt.allocPrint(allocator, "{s}-src-extracted", .{id}) });
+    defer allocator.free(extract_path);
+    std.fs.cwd().deleteTree(extract_path) catch {};
+    try std.fs.cwd().makePath(extract_path);
+
+    std.debug.print("Extracting source...\n", .{});
+    try archive.extractArchive(allocator, archive_path, extract_path, url);
+
+    // Resolve where the build should actually happen (maybe a sub-directory in the tarball)
+    var build_dir = try allocator.dupe(u8, extract_path);
+    defer allocator.free(build_dir);
+    if (config.extract_dir) |ed| {
+        const temp = build_dir;
+        build_dir = try std.fs.path.join(allocator, &.{ temp, ed });
+        allocator.free(temp);
+    }
+
+    std.debug.print("Compiling from source in {s}...\n", .{build_dir});
+    
+    // Construct command
+    var argv = std.ArrayList([]const u8).empty;
+    defer argv.deinit(allocator);
+    try argv.append(allocator, engine);
+    
+    if (config.build_args) |args| {
+        for (args) |arg| {
+            try argv.append(allocator, arg);
+        }
+    }
+
+    // Run build
+    var child = std.process.Child.init(argv.items, allocator);
+    child.cwd = build_dir;
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    
+    const term = try child.spawnAndWait();
+    switch (term) {
+        .Exited => |code| {
+            if (code != 0) {
+                std.debug.print("Build failed with code {}\n", .{code});
+                return error.BuildFailed;
+            }
+        },
+        else => return error.BuildFailed,
+    }
+
+    std.debug.print("Build completed successfully.\n", .{});
+
+    // Now copy binaries over
+    const package_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
+    defer allocator.free(package_dir);
+    
+    try std.fs.cwd().makePath(package_dir);
+
+    // Use bin mapping from manifest
+    if (config.bin) |bins| {
+        for (bins) |bin_src_path| {
+            const full_bin_src = try std.fs.path.join(allocator, &.{ build_dir, bin_src_path });
+            defer allocator.free(full_bin_src);
+
+            const dest_bin_name = std.fs.path.basename(bin_src_path);
+            const full_bin_dest = try std.fs.path.join(allocator, &.{ package_dir, dest_bin_name });
+            defer allocator.free(full_bin_dest);
+
+            try std.fs.cwd().copyFile(full_bin_src, std.fs.cwd(), full_bin_dest, .{});
+            
+            // Mark executable
+            const builtin = @import("builtin");
+            if (builtin.os.tag != .windows) {
+                try archive.makeExecutable(full_bin_dest);
+            }
+
+            // Create shims
+            var bin_dir: []const u8 = undefined;
+            if (mode == .shim) {
+                bin_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", id, version });
+            } else if (mode == .global) {
+                bin_dir = try platform.getInstallDir(allocator, true);
+            } else {
+                bin_dir = try platform.getInstallDir(allocator, false);
+            }
+            defer allocator.free(bin_dir);
+            try std.fs.cwd().makePath(bin_dir);
+
+            const shim = @import("shim.zig");
+            try shim.createShim(allocator, full_bin_dest, bin_dir, dest_bin_name);
+            std.debug.print("Installed compiled binary {s} to {s}\n", .{dest_bin_name, bin_dir});
+            
+            const dest_path_z = try allocator.dupeZ(u8, bin_dir);
+            defer allocator.free(dest_path_z);
+            
+            const id_z = try allocator.dupeZ(u8, id);
+            defer allocator.free(id_z);
+            const version_z = try allocator.dupeZ(u8, version);
+            defer allocator.free(version_z);
+            
+            const is_global = if (mode == .global) true else false;
+            try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
+        }
+    }
+
+    std.fs.cwd().deleteTree(extract_path) catch {};
 }

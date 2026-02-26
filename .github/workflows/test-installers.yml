@@ -25,9 +25,18 @@ jobs:
         shell: bash
         run: mise run build
 
-      - name: Initialize registry
+      - name: Run E2E local tests
         shell: bash
-        run: ./zig-out/bin/binget registry add official https://github.com/frostyeti/binget-pkgs/archive/refs/heads/dev.zip
+        if: matrix.os == 'ubuntu-latest'
+        run: ./eng/scripts/test_post_install_e2e.sh
+
+      - name: Test node install (runtime mode)
+        shell: bash
+        run: ./zig-out/bin/binget install node --user
+
+      - name: Test go install (runtime mode)
+        shell: bash
+        run: ./zig-out/bin/binget install go --user
 
       - name: Test zed install (user mode)
         shell: bash

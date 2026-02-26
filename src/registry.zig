@@ -167,6 +167,8 @@ pub const InstallModeConfig = struct {
     registry_keys: ?[]RegistryKey = null,
     shortcuts: ?[]Shortcut = null,
     links: ?[]Link = null,
+    build_engine: ?[]const u8 = null,
+    build_args: ?[][]const u8 = null,
 };
 
 pub const PlatformManifest = struct {
@@ -243,6 +245,16 @@ fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value
             };
         }
         config.links = links;
+    }
+
+    if (obj.get("build_engine")) |v| config.build_engine = try allocator.dupe(u8, v.string);
+    if (obj.get("build_args")) |v| {
+        const args_arr = v.array;
+        var args = try allocator.alloc([]const u8, args_arr.items.len);
+        for (args_arr.items, 0..) |arg_item, i| {
+            args[i] = try allocator.dupe(u8, arg_item.string);
+        }
+        config.build_args = args;
     }
 
     return config;
@@ -334,5 +346,10 @@ fn freeInstallModeConfig(allocator: std.mem.Allocator, m: InstallModeConfig) voi
             allocator.free(l.type);
         }
         allocator.free(links);
+    }
+    if (m.build_engine) |v| allocator.free(v);
+    if (m.build_args) |args| {
+        for (args) |a| allocator.free(a);
+        allocator.free(args);
     }
 }
