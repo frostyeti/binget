@@ -422,7 +422,8 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     defer allocator.free(bin_dir);
     try std.fs.cwd().makePath(bin_dir);
     
-    const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, bin_name });
+    const dest_bin_name = std.fs.path.basename(bin_name);
+    const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
     defer allocator.free(dest_path);
     
     std.debug.print("Downloading: {s}\n", .{url});
@@ -491,7 +492,8 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
         }
         defer allocator.free(src_path);
 
-        const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, bin_name });
+        const dest_bin_name = std.fs.path.basename(bin_name);
+        const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
         defer allocator.free(dest_path);
 
         std.fs.cwd().deleteFile(dest_path) catch {};
