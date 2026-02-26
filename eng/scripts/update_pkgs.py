@@ -11,11 +11,49 @@ import shutil
 import subprocess
 
 GITHUB_API_URL = "https://api.github.com/repos/{owner}/{repo}/releases/latest"
+GITHUB_REPO_API_URL = "https://api.github.com/repos/{owner}/{repo}"
 
 
 def run_cmd(cmd, cwd=None, env=None):
     print(f"Running: {' '.join(cmd)}")
     subprocess.run(cmd, cwd=cwd, env=env, check=True)
+
+
+def get_github_repo_metadata(owner, repo, headers):
+    url = GITHUB_REPO_API_URL.format(owner=owner, repo=repo)
+    req = urllib.request.Request(url, headers=headers)
+    try:
+        with urllib.request.urlopen(req) as response:
+            data = json.loads(response.read().decode())
+            meta = {}
+            meta["description"] = data.get("description", "")
+            meta["project_url"] = data.get("homepage") or data.get("html_url", "")
+            meta["repo_url"] = data.get("html_url", "")
+
+            license_data = data.get("license")
+            if license_data:
+                spdx = license_data.get("spdx_id")
+                if spdx and spdx != "NOASSERTION":
+                    meta["license"] = spdx
+                else:
+                    meta["license"] = license_data.get("name", "")
+
+                # Only use URL if it's not a common license, but GitHub's API usually provides a generic URL.
+                # Actually, let's just provide the URL if available and it's not a standard SPDX we know?
+                # We'll just include it if it's not a standard one, or maybe just include it if provided.
+                if spdx == "NOASSERTION" and license_data.get("url"):
+                    meta["license_url"] = license_data.get("url")
+
+            owner_data = data.get("owner", {})
+            if owner_data.get("login"):
+                meta["authors"] = [owner_data.get("login")]
+            if owner_data.get("avatar_url"):
+                meta["icon_url"] = owner_data.get("avatar_url")
+
+            return meta
+    except Exception as e:
+        print(f"Failed to fetch metadata for {owner}/{repo}: {e}")
+        return None
 
 
 def get_latest_github_release(owner, repo, headers):
@@ -81,6 +119,31 @@ def process_package(pkg_path, headers):
     if not owner or not repo:
         print(f"Could not determine upstream GitHub repo for package in {pkg_path}")
         return
+
+    # Check if we need to enrich the latest manifest
+    main_manifest_path = os.path.join(latest_dir, "manifest.json")
+    if os.path.exists(main_manifest_path):
+        m_data_main = None
+        with open(main_manifest_path, "r") as f:
+            try:
+                m_data_main = json.load(f)
+                needs_enrichment = not all(
+                    k in m_data_main for k in ["description", "project_url", "license"]
+                )
+            except json.JSONDecodeError:
+                needs_enrichment = False
+
+        if needs_enrichment and m_data_main is not None:
+            print(f"Enriching metadata for {pkg_path} from {owner}/{repo}...")
+            meta = get_github_repo_metadata(owner, repo, headers)
+            if meta:
+                for k, v in meta.items():
+                    if k not in m_data_main and v:
+                        m_data_main[k] = v
+
+                with open(main_manifest_path, "w") as f:
+                    json.dump(m_data_main, f, indent=2)
+                    f.write("\n")
 
     print(f"Checking {owner}/{repo} for package {os.path.basename(pkg_path)}...")
     new_ver, raw_tag = get_latest_github_release(owner, repo, headers)
