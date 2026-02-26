@@ -7,6 +7,7 @@ pub const ShellType = enum {
     powershell, // Windows PowerShell
     pwsh, // PowerShell Core (cross-platform)
     cmd,
+    sh,
     unknown,
 };
 
@@ -17,7 +18,7 @@ pub fn formatPathForShell(allocator: std.mem.Allocator, path: []const u8, shell:
     var len: usize = 0;
 
     if (os == .windows) {
-        if (shell == .bash or shell == .zsh or shell == .fish) {
+        if (shell == .bash or shell == .zsh or shell == .fish or shell == .sh) {
             // Git Bash / MSYS2 style paths: C:\Users\... -> /c/Users/...
             if (path.len >= 2 and std.ascii.isAlphabetic(path[0]) and path[1] == ':') {
                 formatted[0] = '/';
@@ -87,6 +88,7 @@ pub fn detectShell(allocator: std.mem.Allocator) !ShellType {
     if (std.mem.endsWith(u8, shell_env, "zsh")) return .zsh;
     if (std.mem.endsWith(u8, shell_env, "fish")) return .fish;
     if (std.mem.endsWith(u8, shell_env, "pwsh")) return .pwsh;
+    if (std.mem.endsWith(u8, shell_env, "sh")) return .sh;
 
     if (env_map.get("PSModulePath") != null) return .powershell;
     if (env_map.get("COMSPEC") != null) return .cmd;

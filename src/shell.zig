@@ -28,7 +28,7 @@ pub fn parseAndRun(allocator: std.mem.Allocator, args: [][:0]u8) !void {
 
     if (std.mem.eql(u8, subcmd, "compute")) {
         if (args.len < 4) {
-            std.debug.print("Usage: binget shell compute <bash|zsh|fish|pwsh>\n", .{});
+            std.debug.print("Usage: binget shell compute <bash|zsh|fish|pwsh|sh>\n", .{});
             return;
         }
         const shell = args[3];
@@ -40,7 +40,7 @@ pub fn parseAndRun(allocator: std.mem.Allocator, args: [][:0]u8) !void {
 
     if (std.mem.eql(u8, subcmd, "activate")) {
         if (args.len < 4) {
-            std.debug.print("Usage: binget shell activate <bash|zsh|fish|pwsh>\n", .{});
+            std.debug.print("Usage: binget shell activate <bash|zsh|fish|pwsh|sh>\n", .{});
             return;
         }
         const shell = args[3];

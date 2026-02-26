@@ -55,11 +55,24 @@ pub fn parseAndRun(allocator: std.mem.Allocator, args: [][:0]u8) !void {
         // truncate and write
         try file.seekTo(0);
         try file.setEndPos(0);
-
-        // trim last newline if content doesn't end with it originally
-        // but it's fine
         try file.writeAll(new_content.items);
         std.debug.print("Removed {s} from {s}\n", .{ target, config_path });
+
+        // Also uninstall it
+
+        const share_dir = try @import("platform.zig").getBingetShareDir(allocator);
+        defer allocator.free(share_dir);
+        const real_db_path = try std.fs.path.join(allocator, &.{ share_dir, "binget.db" });
+        defer allocator.free(real_db_path);
+
+        const db_path_z = try allocator.dupeZ(u8, real_db_path);
+        defer allocator.free(db_path_z);
+        var db_conn = try @import("db.zig").Database.open(db_path_z);
+        defer db_conn.close();
+
+        @import("uninstall.zig").uninstallPackage(allocator, db_conn, target, false) catch |err| {
+            std.debug.print("Note: Could not uninstall {s}: {}\n", .{ target, err });
+        };
     } else {
         std.debug.print("{s} not found in {s}\n", .{ target, config_path });
     }

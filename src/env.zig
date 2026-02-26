@@ -122,7 +122,7 @@ pub fn execCommand(allocator: std.mem.Allocator, args: [][]const u8) !void {
 }
 fn printUnset(allocator: std.mem.Allocator, shell_name: []const u8, var_name: []const u8) void {
     const stdout = std.fs.File.stdout();
-    if (std.mem.eql(u8, shell_name, "bash") or std.mem.eql(u8, shell_name, "zsh")) {
+    if (std.mem.eql(u8, shell_name, "bash") or std.mem.eql(u8, shell_name, "zsh") or std.mem.eql(u8, shell_name, "sh")) {
         if (std.fmt.allocPrint(allocator, "unset {s}\n", .{var_name})) |msg| {
             stdout.writeAll(msg) catch {};
             allocator.free(msg);
@@ -142,7 +142,7 @@ fn printUnset(allocator: std.mem.Allocator, shell_name: []const u8, var_name: []
 
 fn printExport(allocator: std.mem.Allocator, shell_name: []const u8, var_name: []const u8, value: []const u8) void {
     const stdout = std.fs.File.stdout();
-    if (std.mem.eql(u8, shell_name, "bash") or std.mem.eql(u8, shell_name, "zsh")) {
+    if (std.mem.eql(u8, shell_name, "bash") or std.mem.eql(u8, shell_name, "zsh") or std.mem.eql(u8, shell_name, "sh")) {
         if (std.fmt.allocPrint(allocator, "export {s}=\"{s}\"\n", .{ var_name, value })) |msg| {
             stdout.writeAll(msg) catch {};
             allocator.free(msg);
@@ -165,9 +165,22 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
     const stdout = std.fs.File.stdout();
     if (std.mem.eql(u8, shell_name, "bash")) {
         stdout.writeAll(
+            \\binget() {
+            \\  local command_name=$1
+            \\  command binget "$@"
+            \\  local exit_code=$?
+            \\  case "$command_name" in
+            \\    install|add|remove|upgrade|uninstall)
+            \\      eval "$(command binget shell compute bash)"
+            \\      hash -r 2>/dev/null || true
+            \\      ;;
+            \\  esac
+            \\  return $exit_code
+            \\}
+            \\
             \\_binget_hook() {
             \\  local exit_code=$?
-            \\  eval "$(binget shell compute bash)"
+            \\  eval "$(command binget shell compute bash)"
             \\  return $exit_code
             \\}
             \\if [[ ";${PROMPT_COMMAND:-};" != *";_binget_hook;"* ]]; then
@@ -177,8 +190,21 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
         ) catch {};
     } else if (std.mem.eql(u8, shell_name, "zsh")) {
         stdout.writeAll(
+            \\binget() {
+            \\  local command_name=$1
+            \\  command binget "$@"
+            \\  local exit_code=$?
+            \\  case "$command_name" in
+            \\    install|add|remove|upgrade|uninstall)
+            \\      eval "$(command binget shell compute zsh)"
+            \\      rehash 2>/dev/null || true
+            \\      ;;
+            \\  esac
+            \\  return $exit_code
+            \\}
+            \\
             \\_binget_hook() {
-            \\  eval "$(binget shell compute zsh)"
+            \\  eval "$(command binget shell compute zsh)"
             \\}
             \\typeset -a precmd_functions
             \\if [[ ${precmd_functions[(ie)_binget_hook]} -eq ${#precmd_functions} + 1 ]]; then
@@ -188,10 +214,60 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
         ) catch {};
     } else if (std.mem.eql(u8, shell_name, "fish")) {
         stdout.writeAll(
-            \\function _binget_hook --on-variable PWD --description 'binget env activate'
-            \\  binget shell compute fish | source
+            \\function binget
+            \\  set -l command_name $argv[1]
+            \\  command binget $argv
+            \\  set -l exit_code $status
+            \\  if contains -- $command_name install add remove upgrade uninstall
+            \\    command binget shell compute fish | source
+            \\  end
+            \\  return $exit_code
             \\end
-            \\binget shell compute fish | source
+            \\
+            \\function _binget_hook --on-variable PWD --description 'binget env activate'
+            \\  command binget shell compute fish | source
+            \\end
+            \\command binget shell compute fish | source
+            \\
+        ) catch {};
+    } else if (std.mem.eql(u8, shell_name, "sh")) {
+        stdout.writeAll(
+            \\binget() {
+            \\  command_name=$1
+            \\  command binget "$@"
+            \\  exit_code=$?
+            \\  case "$command_name" in
+            \\    install|add|remove|upgrade|uninstall)
+            \\      eval "$(command binget shell compute sh)"
+            \\      hash -r 2>/dev/null || true
+            \\      ;;
+            \\  esac
+            \\  return $exit_code
+            \\}
+            \\
+            \\cd() {
+            \\  command cd "$@"
+            \\  exit_code=$?
+            \\  if [ $exit_code -eq 0 ]; then
+            \\    eval "$(command binget shell compute sh)"
+            \\  fi
+            \\  return $exit_code
+            \\}
+            \\
+            \\eval "$(command binget shell compute sh)"
+            \\
+        ) catch {};
+    } else if (std.mem.eql(u8, shell_name, "pwsh") or std.mem.eql(u8, shell_name, "powershell")) {
+        stdout.writeAll(
+            \\function binget {
+            \\  $command_name = $args[0]
+            \\  & binget.exe @args
+            \\  $exit_code = $LASTEXITCODE
+            \\  if ($command_name -in @("install", "add", "remove", "upgrade", "uninstall")) {
+            \\    Invoke-Expression (& binget.exe shell compute pwsh | Out-String)
+            \\  }
+            \\  return $exit_code
+            \\}
             \\
         ) catch {};
     }

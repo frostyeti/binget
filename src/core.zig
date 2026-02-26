@@ -148,9 +148,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
 
         var bin_dir: []const u8 = undefined;
         var global = false;
-        if (mode == .shim) {
-            bin_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", repo, release.tag_name });
-        } else if (mode == .global) {
+        if (mode == .global) {
             bin_dir = try platform.getInstallDir(allocator, true);
             global = true;
         } else {
@@ -160,14 +158,35 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
 
         try std.fs.cwd().makePath(bin_dir);
 
-        const link_path = try std.fs.path.join(allocator, &.{ bin_dir, exe_name });
+        var link_path: []const u8 = undefined;
+
+        if (mode == .shim) {
+            const env_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", repo, release.tag_name });
+            defer allocator.free(env_dir);
+            try std.fs.cwd().makePath(env_dir);
+
+            const shim = @import("shim.zig");
+            try shim.createShim(allocator, final_exe_path, env_dir, exe_name);
+            try shim.createShim(allocator, final_exe_path, bin_dir, exe_name);
+
+            link_path = try std.fs.path.join(allocator, &.{ bin_dir, exe_name });
+            std.debug.print("Successfully installed {s} as global shim\n", .{repo});
+        } else {
+            link_path = try std.fs.path.join(allocator, &.{ bin_dir, exe_name });
+            std.fs.cwd().deleteFile(link_path) catch {};
+
+            // Move the binary directly to bin_dir
+            std.fs.cwd().rename(final_exe_path, link_path) catch |err| {
+                std.debug.print("Failed to move binary: {}\n", .{err});
+                return err;
+            };
+
+            // Cleanup the package dir since it's a single binary install
+            std.fs.cwd().deleteTree(pkg_dir) catch {};
+
+            std.debug.print("Successfully installed {s} directly to {s}\n", .{ repo, link_path });
+        }
         defer allocator.free(link_path);
-
-        std.fs.cwd().deleteFile(link_path) catch {};
-
-        try std.fs.cwd().symLink(final_exe_path, link_path, .{});
-
-        std.debug.print("Successfully installed {s} to {s}\n", .{ repo, link_path });
 
         const target = try std.fmt.allocPrint(allocator, "github.com/{s}/{s}", .{ owner, repo });
         defer allocator.free(target);
@@ -620,9 +639,7 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
 
     var bin_dir: []const u8 = undefined;
     var is_global = false;
-    if (mode == .shim) {
-        bin_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", id, version });
-    } else if (mode == .global) {
+    if (mode == .global) {
         bin_dir = try platform.getInstallDir(allocator, true);
         is_global = true;
     } else {
@@ -631,26 +648,41 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     defer allocator.free(bin_dir);
     try std.fs.cwd().makePath(bin_dir);
 
-    const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
-    defer allocator.free(pkg_dir);
-
-    std.fs.cwd().deleteTree(pkg_dir) catch {};
-    try std.fs.cwd().makePath(pkg_dir);
-
     const dest_bin_name = std.fs.path.basename(bin_name);
-    const target_exe = try std.fs.path.join(allocator, &.{ pkg_dir, dest_bin_name });
-    defer allocator.free(target_exe);
+    var dest_path: []const u8 = undefined;
 
-    std.debug.print("Downloading: {s}\n", .{url});
-    try archive.downloadFile(allocator, url, target_exe);
-    try archive.makeExecutable(target_exe);
+    if (mode == .shim) {
+        const env_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", id, version });
+        defer allocator.free(env_dir);
+        try std.fs.cwd().makePath(env_dir);
 
-    const shim = @import("shim.zig");
-    try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+        const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
+        defer allocator.free(pkg_dir);
+        std.fs.cwd().deleteTree(pkg_dir) catch {};
+        try std.fs.cwd().makePath(pkg_dir);
 
-    std.debug.print("Installed {s} to {s}\n", .{ dest_bin_name, bin_dir });
+        const target_exe = try std.fs.path.join(allocator, &.{ pkg_dir, dest_bin_name });
+        defer allocator.free(target_exe);
 
-    const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
+        std.debug.print("Downloading: {s}\n", .{url});
+        try archive.downloadFile(allocator, url, target_exe);
+        try archive.makeExecutable(target_exe);
+
+        const shim = @import("shim.zig");
+        try shim.createShim(allocator, target_exe, env_dir, dest_bin_name);
+        try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+
+        dest_path = try allocator.dupe(u8, target_exe);
+        std.debug.print("Installed {s} as global shim\n", .{dest_bin_name});
+    } else {
+        const target_exe = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
+
+        std.debug.print("Downloading directly to {s}...\n", .{target_exe});
+        try archive.downloadFile(allocator, url, target_exe);
+        try archive.makeExecutable(target_exe);
+
+        dest_path = try allocator.dupe(u8, target_exe);
+    }
     defer allocator.free(dest_path);
 
     const id_z = try allocator.dupeZ(u8, id);
@@ -673,9 +705,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     var bin_dir: []const u8 = undefined;
     var is_global = false;
-    if (mode == .shim) {
-        bin_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", id, version });
-    } else if (mode == .global) {
+    if (mode == .global) {
         bin_dir = try platform.getInstallDir(allocator, true);
         is_global = true;
     } else {
@@ -723,7 +753,17 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
         try archive.makeExecutable(target_exe);
 
         const dest_bin_name = std.fs.path.basename(bin_name);
-        try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+
+        if (mode == .shim) {
+            const env_dir = try std.fs.path.join(allocator, &.{ share_dir, "env", id, version });
+            defer allocator.free(env_dir);
+            try std.fs.cwd().makePath(env_dir);
+
+            try shim.createShim(allocator, target_exe, env_dir, dest_bin_name);
+            try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+        } else {
+            try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+        }
 
         // Record install for the first binary
         if (std.mem.eql(u8, bin_name, config.bin.?[0])) {

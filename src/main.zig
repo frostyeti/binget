@@ -103,6 +103,12 @@ pub fn main() !void {
         } else if (std.mem.eql(u8, cmd, "list")) {
             const list_cmd = @import("list.zig");
             try list_cmd.parseAndRun(allocator, args);
+        } else if (std.mem.eql(u8, cmd, "extract")) {
+            const extract_cmd = @import("extract.zig");
+            try extract_cmd.parseAndRun(allocator, args);
+        } else if (std.mem.eql(u8, cmd, "fetch")) {
+            const fetch_cmd = @import("fetch.zig");
+            try fetch_cmd.parseAndRun(allocator, args);
         } else if (std.mem.eql(u8, cmd, "which")) {
             const which_cmd = @import("which.zig");
             try which_cmd.parseAndRun(allocator, args);
