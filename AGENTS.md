@@ -18,6 +18,7 @@
 - Always prefer Zig native libraries, standard library, and cross-compilation friendly C code over complex system dependencies.
 - Keep `build.zig` and `build.zig.zon` clean and up to date.
 - Use `zig fmt` to keep the code formatted and consistent.
+- When configuring GoReleaser with the Zig builder, use the `amd64` architecture naming convention instead of `x86_64` in `.goreleaser.yaml` targets.
 
 ## Project Structure
 
