@@ -36,6 +36,43 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []c
 pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, out_dir_path: []const u8, original_url: []const u8) !void {
     try std.fs.cwd().makePath(out_dir_path);
 
+    // Handle MSI explicitly via msiexec
+    if (std.ascii.endsWithIgnoreCase(original_url, ".msi")) {
+        const builtin = @import("builtin");
+        if (builtin.os.tag != .windows) {
+            std.debug.print("Cannot extract MSI on non-Windows platform.\n", .{});
+            return error.UnsupportedPlatform;
+        }
+
+        // msiexec requires absolute paths
+        const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
+        defer allocator.free(abs_archive);
+        const abs_out = try std.fs.cwd().realpathAlloc(allocator, out_dir_path);
+        defer allocator.free(abs_out);
+
+        const target_dir_arg = try std.fmt.allocPrint(allocator, "TARGETDIR={s}", .{abs_out});
+        defer allocator.free(target_dir_arg);
+
+        const argv = &[_][]const u8{ "msiexec.exe", "/a", abs_archive, "/qn", target_dir_arg };
+        
+        std.debug.print("Extracting MSI...\n", .{});
+        var child = std.process.Child.init(argv, allocator);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Inherit;
+        
+        const term = try child.spawnAndWait();
+        switch (term) {
+            .Exited => |code| {
+                if (code != 0) {
+                    std.debug.print("msiexec exited with code {}\n", .{code});
+                    return error.ExtractFailed;
+                }
+                return;
+            },
+            else => return error.ExtractFailed,
+        }
+    }
+
     // Try native Zig extraction first
     if (try extractNative(allocator, archive_path, out_dir_path, original_url)) {
         return;
@@ -68,7 +105,7 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
     var file = try std.fs.cwd().openFile(archive_path, .{});
     defer file.close();
 
-    if (std.ascii.endsWithIgnoreCase(original_url, ".zip")) {
+    if (std.ascii.endsWithIgnoreCase(original_url, ".zip") or std.ascii.endsWithIgnoreCase(original_url, ".nupkg")) {
         var read_buf: [8192]u8 = undefined;
         var file_reader = file.reader(&read_buf);
         try std.zip.extract(out_dir, &file_reader, .{});

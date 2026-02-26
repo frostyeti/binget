@@ -295,6 +295,30 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     } else if (std.mem.eql(u8, config.type, "installer")) {
         std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{id, config.format orelse "unknown"});
         try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, final_mode);
+    } else if (std.mem.eql(u8, config.type, "flatpak")) {
+        std.debug.print("Proxying installation to flatpak...\n", .{});
+        const app_id = config.package orelse return error.MissingPackageForFlatpak;
+        
+        var argv = try allocator.alloc([]const u8, 5);
+        defer allocator.free(argv);
+        argv[0] = "flatpak";
+        argv[1] = "install";
+        argv[2] = if (final_mode == .global) "--system" else "--user";
+        argv[3] = "--noninteractive";
+        argv[4] = app_id;
+        
+        var child = std.process.Child.init(argv, allocator);
+        child.stdout_behavior = .Inherit;
+        child.stderr_behavior = .Inherit;
+        
+        const term = try child.spawnAndWait();
+        switch (term) {
+            .Exited => |code| {
+                if (code != 0) return error.InstallFailed;
+                try db_conn.recordInstall(id, version_to_install, "flatpak", final_mode == .global);
+            },
+            else => return error.InstallFailed,
+        }
     } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew")) {
         std.debug.print("Proxying installation to system package manager ({s})...\n", .{config.type});
         
@@ -383,26 +407,70 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     std.debug.print("Downloading installer to: {s}\n", .{download_path});
     try archive.downloadFile(allocator, url, download_path);
     
-    std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
-    std.debug.print("To install '{s}', you must run the following downloaded file:\n", .{id});
-    std.debug.print("-> {s}\n\n", .{download_path});
+    std.debug.print("Executing system installer...\n", .{});
     
-    if (std.mem.eql(u8, format, "msi")) {
-        std.debug.print("Command: msiexec /i \"{s}\"\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "exe")) {
-        std.debug.print("Command: \"{s}\"\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "dmg")) {
-        std.debug.print("Command: hdiutil attach \"{s}\"\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "pkg")) {
-        std.debug.print("Command: sudo installer -pkg \"{s}\" -target /\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "deb")) {
-        std.debug.print("Command: sudo dpkg -i \"{s}\"\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "rpm")) {
-        std.debug.print("Command: sudo rpm -i \"{s}\"\n", .{download_path});
-    } else if (std.mem.eql(u8, format, "appimage")) {
-        std.debug.print("Command: chmod +x \"{s}\" && \"{s}\"\n", .{download_path, download_path});
+    var args = std.ArrayList([]const u8).init(allocator);
+    defer args.deinit();
+
+    const builtin = @import("builtin");
+
+    if (std.mem.eql(u8, format, "msi") and builtin.os.tag == .windows) {
+        try args.append("msiexec.exe");
+        try args.append("/i");
+        try args.append(download_path);
+        
+        if (config.silent_args) |sargs| {
+            for (sargs) |arg| {
+                try args.append(arg);
+            }
+        } else {
+            try args.append("/qb"); // Default silentish MSI arg
+        }
+    } else if (std.mem.eql(u8, format, "exe") and builtin.os.tag == .windows) {
+        try args.append(download_path);
+        if (config.silent_args) |sargs| {
+            for (sargs) |arg| {
+                try args.append(arg);
+            }
+        }
+    } else {
+        std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
+        std.debug.print("Automatic execution is not fully supported for this format ({s}) on this OS.\n", .{format});
+        std.debug.print("To install '{s}', please run the following downloaded file manually:\n", .{id});
+        std.debug.print("-> {s}\n", .{download_path});
+        if (config.silent_args) |sargs| {
+            std.debug.print("Recommended silent arguments: ", .{});
+            for (sargs) |arg| {
+                std.debug.print("{s} ", .{arg});
+            }
+            std.debug.print("\n", .{});
+        }
+        std.debug.print("==============================\n\n", .{});
+        return;
     }
-    std.debug.print("==============================\n\n", .{});
+
+    var child = std.process.Child.init(args.items, allocator);
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    
+    std.debug.print("Running installer: ", .{});
+    for (args.items) |arg| std.debug.print("{s} ", .{arg});
+    std.debug.print("\n", .{});
+
+    const term = try child.spawnAndWait();
+    switch (term) {
+        .Exited => |code| {
+            if (code != 0) {
+                std.debug.print("Installer exited with error code {}\n", .{code});
+                return error.InstallFailed;
+            }
+            std.debug.print("Installation completed successfully.\n", .{});
+        },
+        else => {
+            std.debug.print("Installer failed to complete.\n", .{});
+            return error.InstallFailed;
+        }
+    }
 }
 
 fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
