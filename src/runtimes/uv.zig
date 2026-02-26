@@ -22,7 +22,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     } else {
         const url = "https://github.com/astral-sh/uv/releases/latest";
         const uri = try std.Uri.parse(url);
-        
+
         // We use unhandled redirect behavior to just read the Location header
         var req = try client.request(.GET, uri, .{ .redirect_behavior = .unhandled });
         defer req.deinit();
@@ -37,7 +37,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         }
 
         const location = res.head.location orelse return error.MissingLocationHeader;
-        
+
         // location usually looks like https://github.com/astral-sh/uv/releases/tag/0.1.20
         const tag_prefix = "/tag/";
         if (std.mem.lastIndexOf(u8, location, tag_prefix)) |idx| {
@@ -52,7 +52,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         }
     }
     defer allocator.free(target_version);
-    
+
     std.debug.print("Target uv version: {s}\n", .{target_version});
 
     const arch_str = switch (builtin.cpu.arch) {
@@ -63,7 +63,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .powerpc64le => "powerpc64le",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_str = switch (builtin.os.tag) {
         .linux => "unknown-linux-gnu",
         .macos => "apple-darwin",
@@ -71,7 +71,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => return error.UnsupportedOS,
     };
 
-    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{arch_str, os_str});
+    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ arch_str, os_str });
     defer allocator.free(target_triple);
 
     const ext = switch (builtin.os.tag) {
@@ -79,10 +79,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => "tar.gz",
     };
 
-    const filename = try std.fmt.allocPrint(allocator, "uv-{s}.{s}", .{target_triple, ext});
+    const filename = try std.fmt.allocPrint(allocator, "uv-{s}.{s}", .{ target_triple, ext });
     defer allocator.free(filename);
-    
-    const download_url = try std.fmt.allocPrint(allocator, "https://github.com/astral-sh/uv/releases/download/{s}/{s}", .{target_version, filename});
+
+    const download_url = try std.fmt.allocPrint(allocator, "https://github.com/astral-sh/uv/releases/download/{s}/{s}", .{ target_version, filename });
     defer allocator.free(download_url);
 
     var bins = try allocator.alloc([]const u8, 2);
@@ -98,7 +98,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[1]);
         allocator.free(bins);
     }
-    
+
     const extract_dir = try std.fmt.allocPrint(allocator, "uv-{s}", .{target_triple});
     defer allocator.free(extract_dir);
 
@@ -114,8 +114,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.url.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading uv from {s}...\n", .{download_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "uv", target_version, config, mode);
 }

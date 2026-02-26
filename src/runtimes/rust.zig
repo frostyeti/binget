@@ -12,12 +12,12 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer client.deinit();
 
     var target_version: []const u8 = undefined;
-    
+
     if (version_opt) |v| {
         target_version = try allocator.dupe(u8, v);
     } else {
         const url = "https://static.rust-lang.org/dist/channel-rust-stable.toml";
-        
+
         const uri = try std.Uri.parse(url);
         var req = try client.request(.GET, uri, .{});
         defer req.deinit();
@@ -42,7 +42,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         var found_pkg_rust = false;
         var version_str: ?[]const u8 = null;
         var line_iter = std.mem.splitScalar(u8, body, '\n');
-        
+
         while (line_iter.next()) |line| {
             const t = std.mem.trim(u8, line, " \r");
             if (std.mem.eql(u8, t, "[pkg.rust]")) {
@@ -59,16 +59,16 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
                 break;
             }
         }
-        
+
         if (version_str == null) {
             std.debug.print("Could not parse stable version from channel toml.\n", .{});
             return error.VersionNotFound;
         }
-        
+
         target_version = try allocator.dupe(u8, version_str.?);
     }
     defer allocator.free(target_version);
-    
+
     std.debug.print("Target Rust version: {s}\n", .{target_version});
 
     const arch_str = switch (builtin.cpu.arch) {
@@ -79,7 +79,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "i686",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_target = switch (builtin.os.tag) {
         .linux => "unknown-linux-gnu",
         .macos => "apple-darwin",
@@ -87,12 +87,12 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => return error.UnsupportedOS,
     };
 
-    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{arch_str, os_target});
+    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ arch_str, os_target });
     defer allocator.free(target_triple);
 
-    const filename = try std.fmt.allocPrint(allocator, "rust-{s}-{s}.tar.gz", .{target_version, target_triple});
+    const filename = try std.fmt.allocPrint(allocator, "rust-{s}-{s}.tar.gz", .{ target_version, target_triple });
     defer allocator.free(filename);
-    
+
     const tarball_url = try std.fmt.allocPrint(allocator, "https://static.rust-lang.org/dist/{s}", .{filename});
     defer allocator.free(tarball_url);
 
@@ -121,7 +121,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
             shasum = try allocator.dupe(u8, shasum_body[0..space_idx]);
         }
     }
-    
+
     var bins = try allocator.alloc([]const u8, 3);
     if (builtin.os.tag == .windows) {
         bins[0] = try allocator.dupe(u8, "bin/rustc.exe");
@@ -138,8 +138,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[2]);
         allocator.free(bins);
     }
-    
-    const extract_dir = try std.fmt.allocPrint(allocator, "rust-{s}-{s}", .{target_version, target_triple});
+
+    const extract_dir = try std.fmt.allocPrint(allocator, "rust-{s}-{s}", .{ target_version, target_triple });
     defer allocator.free(extract_dir);
 
     const config = registry.InstallModeConfig{
@@ -155,8 +155,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         if (config.checksum) |c| allocator.free(c);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Rust from {s}...\n", .{tarball_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "rust", target_version, config, mode);
 }

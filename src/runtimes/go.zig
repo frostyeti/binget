@@ -13,7 +13,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
 
     // If version is specified, we might need ?mode=json&include=all, otherwise just ?mode=json
     const url = if (version_opt != null) "https://go.dev/dl/?mode=json&include=all" else "https://go.dev/dl/?mode=json";
-    
+
     const uri = try std.Uri.parse(url);
     var req = try client.request(.GET, uri, .{});
     defer req.deinit();
@@ -38,10 +38,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer parsed.deinit();
 
     const root = parsed.value.array;
-    
+
     var target_version: []const u8 = undefined;
     var go_version_str: []const u8 = undefined; // e.g. "go1.21.0"
-    
+
     if (version_opt) |v| {
         target_version = v;
         go_version_str = try std.fmt.allocPrint(allocator, "go{s}", .{v});
@@ -60,7 +60,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         if (version_opt != null) allocator.free(go_version_str);
         if (version_opt == null) allocator.free(go_version_str);
     }
-    
+
     std.debug.print("Target Go version: {s}\n", .{target_version});
 
     // Find the version object
@@ -72,7 +72,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
             break;
         }
     }
-    
+
     if (version_obj == null) {
         std.debug.print("Version {s} not found.\n", .{go_version_str});
         return error.VersionNotFound;
@@ -87,7 +87,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "386",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_str = switch (builtin.os.tag) {
         .linux => "linux",
         .macos => "darwin",
@@ -95,10 +95,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .freebsd => "freebsd",
         else => return error.UnsupportedOS,
     };
-    
+
     const files = version_obj.?.get("files").?.array;
     var target_file: ?std.json.ObjectMap = null;
-    
+
     for (files.items) |file_val| {
         const file_obj = file_val.object;
         if (!std.mem.eql(u8, file_obj.get("os").?.string, os_str)) continue;
@@ -107,15 +107,15 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         target_file = file_obj;
         break;
     }
-    
+
     if (target_file == null) {
-        std.debug.print("Platform {s}-{s} not found for version {s}.\n", .{os_str, arch_str, go_version_str});
+        std.debug.print("Platform {s}-{s} not found for version {s}.\n", .{ os_str, arch_str, go_version_str });
         return error.PlatformNotFound;
     }
-    
+
     const filename = target_file.?.get("filename").?.string;
     const shasum = target_file.?.get("sha256").?.string;
-    
+
     const tarball_url = try std.fmt.allocPrint(allocator, "https://dl.google.com/go/{s}", .{filename});
     defer allocator.free(tarball_url);
 
@@ -127,7 +127,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[1]);
         allocator.free(bins);
     }
-    
+
     const config = registry.InstallModeConfig{
         .type = try allocator.dupe(u8, "archive"),
         .url = try allocator.dupe(u8, tarball_url),
@@ -141,8 +141,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.checksum.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Go from {s}...\n", .{tarball_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "go", target_version, config, mode);
 }

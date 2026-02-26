@@ -9,7 +9,7 @@ pub fn extractArMemberByPrefix(
 ) !bool {
     var file = try std.fs.cwd().openFile(archive_path, .{});
     defer file.close();
-    
+
     var read_buf: [8192]u8 = undefined;
     var reader = file.reader(&read_buf);
 
@@ -35,7 +35,7 @@ pub fn extractArMemberByPrefix(
         // 40-47: File mode
         // 48-57: File size in bytes (ASCII decimal)
         // 58-59: End of header (`\x60\x0A` or "`\n")
-        
+
         if (header[58] != '`' or header[59] != '\n') {
             return error.MalformedArHeader;
         }

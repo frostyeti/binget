@@ -24,10 +24,10 @@ pub fn run(allocator: std.mem.Allocator, id: []const u8, version: []const u8, co
 fn applyLinks(allocator: std.mem.Allocator, links: []const registry.Link) !void {
     _ = allocator;
     for (links) |l| {
-        std.debug.print("Creating {s}: {s} -> {s}\n", .{l.type, l.link, l.target});
+        std.debug.print("Creating {s}: {s} -> {s}\n", .{ l.type, l.link, l.target });
         if (std.mem.eql(u8, l.type, "symlink")) {
             std.fs.cwd().symLink(l.target, l.link, .{}) catch |err| {
-                std.debug.print("Warning: Failed to create symlink {s}: {}\n", .{l.link, err});
+                std.debug.print("Warning: Failed to create symlink {s}: {}\n", .{ l.link, err });
             };
         } else if (std.mem.eql(u8, l.type, "hardlink")) {
             const builtin = @import("builtin");
@@ -35,11 +35,11 @@ fn applyLinks(allocator: std.mem.Allocator, links: []const registry.Link) !void 
                 // Not supported natively in std.posix.link for Windows yet. Fallback to copy or log warning.
                 std.debug.print("Warning: Hardlinks are not natively supported on Windows via std.posix.link. Using copy instead.\n", .{});
                 std.fs.cwd().copyFile(l.target, std.fs.cwd(), l.link, .{}) catch |err| {
-                    std.debug.print("Warning: Failed to copy file {s}: {}\n", .{l.link, err});
+                    std.debug.print("Warning: Failed to copy file {s}: {}\n", .{ l.link, err });
                 };
             } else {
                 std.posix.link(l.target, l.link) catch |err| {
-                    std.debug.print("Warning: Failed to create hardlink {s}: {}\n", .{l.link, err});
+                    std.debug.print("Warning: Failed to create hardlink {s}: {}\n", .{ l.link, err });
                 };
             }
         }
@@ -51,7 +51,7 @@ fn applyShortcuts(allocator: std.mem.Allocator, shortcuts: []const registry.Shor
 
     for (shortcuts) |shortcut| {
         std.debug.print("Creating shortcut: {s}\n", .{shortcut.name});
-        
+
         if (builtin.os.tag == .windows) {
             // Use PowerShell to create a .lnk shortcut
             var script = std.ArrayList(u8).empty;
@@ -84,23 +84,23 @@ fn applyShortcuts(allocator: std.mem.Allocator, shortcuts: []const registry.Shor
 
             const home = std.posix.getenv("HOME") orelse return error.NoHome;
             if (std.mem.eql(u8, shortcut.location, "desktop")) {
-                try path.writer(allocator).print("{s}/Desktop/{s}.desktop", .{home, shortcut.name});
+                try path.writer(allocator).print("{s}/Desktop/{s}.desktop", .{ home, shortcut.name });
             } else {
-                try path.writer(allocator).print("{s}/.local/share/applications/{s}.desktop", .{home, shortcut.name});
+                try path.writer(allocator).print("{s}/.local/share/applications/{s}.desktop", .{ home, shortcut.name });
             }
 
             try std.fs.cwd().makePath(std.fs.path.dirname(path.items).?);
             var file = try std.fs.cwd().createFile(path.items, .{});
             defer file.close();
 
-            const content = try std.fmt.allocPrint(allocator, 
+            const content = try std.fmt.allocPrint(allocator,
                 \\[Desktop Entry]
                 \\Name={s}
                 \\Exec={s}
                 \\Type=Application
                 \\Terminal=false
                 \\
-            , .{shortcut.name, shortcut.target});
+            , .{ shortcut.name, shortcut.target });
             defer allocator.free(content);
             try file.writeAll(content);
 
@@ -109,7 +109,7 @@ fn applyShortcuts(allocator: std.mem.Allocator, shortcuts: []const registry.Shor
                 defer allocator.free(icon_str);
                 try file.writeAll(icon_str);
             }
-            
+
             // Make executable if on desktop
             if (std.mem.eql(u8, shortcut.location, "desktop")) {
                 const stat = try file.stat();
@@ -122,16 +122,16 @@ fn applyShortcuts(allocator: std.mem.Allocator, shortcuts: []const registry.Shor
 
             const home = std.posix.getenv("HOME") orelse return error.NoHome;
             if (std.mem.eql(u8, shortcut.location, "desktop")) {
-                try path.writer(allocator).print("{s}/Desktop/{s}", .{home, shortcut.name});
+                try path.writer(allocator).print("{s}/Desktop/{s}", .{ home, shortcut.name });
             } else {
-                try path.writer(allocator).print("{s}/Applications/{s}", .{home, shortcut.name});
+                try path.writer(allocator).print("{s}/Applications/{s}", .{ home, shortcut.name });
             }
 
             // It's common to symlink .app folders. We'll just do a symlink.
             std.fs.cwd().deleteFile(path.items) catch {};
             std.fs.cwd().deleteTree(path.items) catch {}; // in case it's a directory symlink
             std.fs.cwd().symLink(shortcut.target, path.items, .{}) catch |err| {
-                std.debug.print("Warning: Failed to create macOS shortcut {s}: {}\n", .{path.items, err});
+                std.debug.print("Warning: Failed to create macOS shortcut {s}: {}\n", .{ path.items, err });
             };
         }
     }

@@ -45,7 +45,7 @@ pub fn trustCurrentDir(allocator: std.mem.Allocator) !void {
 
     var file = try std.fs.cwd().createFile(trusted_path, .{ .read = true, .truncate = false });
     defer file.close();
-    
+
     try file.seekFromEnd(0);
     const line = try std.fmt.allocPrint(allocator, "{s}\n", .{cwd});
     defer allocator.free(line);

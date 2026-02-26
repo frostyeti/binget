@@ -25,7 +25,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
 
     if (needs_resolution) {
         const url = "https://builds.dotnet.microsoft.com/dotnet/release-metadata/releases-index.json";
-        
+
         const uri = try std.Uri.parse(url);
         var req = try client.request(.GET, uri, .{});
         defer req.deinit();
@@ -51,15 +51,15 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
 
         const root = parsed.value.object;
         const releases_index = root.get("releases-index").?.array;
-        
+
         var found_sdk: ?[]const u8 = null;
-        
+
         for (releases_index.items) |item| {
             const obj = item.object;
             const channel = obj.get("channel-version").?.string;
             const sdk = obj.get("latest-sdk").?.string;
             const support = obj.get("support-phase").?.string;
-            
+
             if (version_opt) |v| {
                 if (std.mem.eql(u8, channel, v)) {
                     found_sdk = sdk;
@@ -72,16 +72,16 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
                 }
             }
         }
-        
+
         if (found_sdk == null) {
             std.debug.print("Could not resolve dotnet version.\n", .{});
             return error.VersionNotFound;
         }
-        
+
         target_version = try allocator.dupe(u8, found_sdk.?);
     }
     defer allocator.free(target_version);
-    
+
     std.debug.print("Target Dotnet SDK version: {s}\n", .{target_version});
 
     const arch_str = switch (builtin.cpu.arch) {
@@ -91,7 +91,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "x86",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_target = switch (builtin.os.tag) {
         .linux => "linux",
         .macos => "osx",
@@ -104,10 +104,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => "tar.gz",
     };
 
-    const filename = try std.fmt.allocPrint(allocator, "dotnet-sdk-{s}-{s}-{s}.{s}", .{target_version, os_target, arch_str, ext});
+    const filename = try std.fmt.allocPrint(allocator, "dotnet-sdk-{s}-{s}-{s}.{s}", .{ target_version, os_target, arch_str, ext });
     defer allocator.free(filename);
-    
-    const tarball_url = try std.fmt.allocPrint(allocator, "https://dotnetcli.azureedge.net/dotnet/Sdk/{s}/{s}", .{target_version, filename});
+
+    const tarball_url = try std.fmt.allocPrint(allocator, "https://dotnetcli.azureedge.net/dotnet/Sdk/{s}/{s}", .{ target_version, filename });
     defer allocator.free(tarball_url);
 
     var bins = try allocator.alloc([]const u8, 1);
@@ -116,7 +116,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[0]);
         allocator.free(bins);
     }
-    
+
     const config = registry.InstallModeConfig{
         .type = try allocator.dupe(u8, "archive"),
         .url = try allocator.dupe(u8, tarball_url),
@@ -129,8 +129,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.url.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Dotnet from {s}...\n", .{tarball_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "dotnet", target_version, config, mode);
 }

@@ -82,7 +82,7 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
     var parts = std.mem.splitScalar(u8, target, '@');
     const name_part = parts.next().?;
     const version_opt = parts.next();
-    
+
     // Check if name_part has a slash, meaning it's an owner/repo format
     const has_slash = std.mem.indexOfScalar(u8, name_part, '/') != null;
 
@@ -94,7 +94,7 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
         var repo_parts = std.mem.splitScalar(u8, repo_path, '/');
         const owner = repo_parts.next() orelse return error.InvalidTarget;
         const repo = repo_parts.next() orelse return error.InvalidTarget;
-        
+
         try core.installGithub(allocator, db_conn, owner, repo, version_opt, mode);
     } else {
         const id = name_part;
@@ -109,14 +109,14 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
 
 pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, config_path_opt: ?[]const u8, skip_prompts: bool) !void {
     var path_to_use = config_path_opt;
-    
+
     var need_free = false;
     if (path_to_use == null) {
         const env = @import("env.zig");
         path_to_use = try env.findConfig(allocator);
         need_free = true;
     }
-    
+
     defer {
         if (need_free) {
             if (path_to_use) |p| {
@@ -124,17 +124,17 @@ pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, con
             }
         }
     }
-    
+
     if (path_to_use) |p| {
         std.debug.print("Installing from config: {s}\n", .{p});
         // We need to parse the file and find the 'bin:' block.
         // For now, we will just read the file, and do naive parsing.
-        
+
         var file = try std.fs.cwd().openFile(p, .{});
         defer file.close();
         const content = try file.readToEndAlloc(allocator, 10 * 1024 * 1024);
         defer allocator.free(content);
-        
+
         const bf = try binget_file.parseBingetFile(allocator, content);
         // We will need to parse bf.bin_content
         if (bf.bin_content.len > 0) {
@@ -153,17 +153,17 @@ fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, b
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \r\t");
         if (trimmed.len == 0 or trimmed[0] == '#') continue;
-        
+
         // Find top-level items under bin:
-        // We accept both indented and unindented items, 
+        // We accept both indented and unindented items,
         // e.g. "github.com/org/repo: version" or "id@version"
-        
+
         // Split by ':' or space to get the ID part
         var id_part = trimmed;
         if (std.mem.indexOfScalar(u8, trimmed, ':')) |colon_idx| {
             id_part = std.mem.trimRight(u8, trimmed[0..colon_idx], " \t");
             const val_part = std.mem.trim(u8, trimmed[colon_idx + 1 ..], " \t\"'");
-            
+
             // if val_part is a simple version string, construct id@version
             if (val_part.len > 0 and std.mem.indexOfScalar(u8, val_part, '{') == null) {
                 var target_buf = std.ArrayList(u8).empty;
@@ -171,21 +171,21 @@ fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, b
                 try target_buf.appendSlice(allocator, id_part);
                 try target_buf.append(allocator, '@');
                 try target_buf.appendSlice(allocator, val_part);
-                
+
                 std.debug.print("Found dependency: {s}\n", .{target_buf.items});
                 installTarget(allocator, db_conn, target_buf.items, .shim, skip_prompts) catch |err| {
-                    std.debug.print("Failed to install {s}: {}\n", .{target_buf.items, err});
+                    std.debug.print("Failed to install {s}: {}\n", .{ target_buf.items, err });
                 };
                 continue;
             }
         }
-        
+
         if (id_part.len > 0 and std.mem.indexOfScalar(u8, id_part, ' ') == null) {
             // heuristic: if it looks like a package id
             if (std.mem.indexOfScalar(u8, id_part, '/') != null or std.mem.indexOfScalar(u8, id_part, '@') != null) {
                 std.debug.print("Found dependency: {s}\n", .{id_part});
                 installTarget(allocator, db_conn, id_part, .shim, skip_prompts) catch |err| {
-                    std.debug.print("Failed to install {s}: {}\n", .{id_part, err});
+                    std.debug.print("Failed to install {s}: {}\n", .{ id_part, err });
                 };
             }
         }

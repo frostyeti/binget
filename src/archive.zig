@@ -13,7 +13,7 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []c
     defer req.deinit();
 
     try req.sendBodiless();
-    
+
     var redirect_buf: [8192]u8 = undefined;
     var res = try req.receiveHead(&redirect_buf);
 
@@ -59,12 +59,12 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
         defer allocator.free(target_dir_arg);
 
         const argv = &[_][]const u8{ "msiexec.exe", "/a", abs_archive, "/qn", target_dir_arg };
-        
+
         std.debug.print("Extracting MSI...\n", .{});
         var child = std.process.Child.init(argv, allocator);
         child.stdout_behavior = .Ignore;
         child.stderr_behavior = .Inherit;
-        
+
         const term = try child.spawnAndWait();
         switch (term) {
             .Exited => |code| {
@@ -93,12 +93,12 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
         defer allocator.free(dir_arg);
 
         const argv = &[_][]const u8{ abs_archive, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", dir_arg };
-        
+
         std.debug.print("Extracting Inno Setup locally...\n", .{});
         var child = std.process.Child.init(argv, allocator);
         child.stdout_behavior = .Ignore;
         child.stderr_behavior = .Inherit;
-        
+
         const term = try child.spawnAndWait();
         switch (term) {
             .Exited => |code| {
@@ -121,7 +121,7 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
         const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
         defer allocator.free(abs_archive);
 
-        // Squirrel installers bundle a nupkg inside. 
+        // Squirrel installers bundle a nupkg inside.
         // We can just execute the squirrel Setup.exe with --silent, but it installs to LocalAppData.
         // If we want a portable zip extraction, we can rename the exe to .zip and try to unzip.
         // Actually, some Squirrel setup files are just .zip files with a PE header.
@@ -141,13 +141,13 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
     }
 
     std.debug.print("Native extraction unsupported for this format, falling back to system tar...\n", .{});
-    
+
     // Fallback to system tar
     const argv = &[_][]const u8{ "tar", "-xf", archive_path, "-C", out_dir_path };
     var child = std.process.Child.init(argv, allocator);
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Inherit;
-    
+
     const term = try child.spawnAndWait();
     switch (term) {
         .Exited => |code| {
@@ -198,7 +198,7 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
         try std.tar.pipeToFileSystem(out_dir, &file_reader.interface, .{ .mode_mode = .executable_bit_only });
         return true;
     }
-    
+
     // Fallback to system tar for xz, bzip2, etc.
     return false;
 }

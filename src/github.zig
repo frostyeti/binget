@@ -51,7 +51,7 @@ fn fetchReleaseByUrl(allocator: std.mem.Allocator, url_str: []const u8) !Release
     defer req.deinit();
 
     try req.sendBodiless();
-    
+
     var redirect_buf: [8192]u8 = undefined;
     var res = try req.receiveHead(&redirect_buf);
 
@@ -72,10 +72,10 @@ fn fetchReleaseByUrl(allocator: std.mem.Allocator, url_str: []const u8) !Release
 
     const root = parsed.value.object;
     const tag_name = root.get("tag_name").?.string;
-    
+
     const assets_array = root.get("assets").?.array;
     var assets = try allocator.alloc(Release.Asset, assets_array.items.len);
-    
+
     for (assets_array.items, 0..) |asset_val, i| {
         const asset_obj = asset_val.object;
         assets[i] = Release.Asset{

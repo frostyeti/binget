@@ -7,7 +7,7 @@ pub fn uninstallPackage(allocator: std.mem.Allocator, db_conn: db.Database, targ
     const id = parts.next().?;
     var version: ?[]const u8 = parts.next();
     var need_free_version = false;
-    
+
     defer {
         if (need_free_version) {
             if (version) |v| allocator.free(v);
@@ -26,9 +26,9 @@ pub fn uninstallPackage(allocator: std.mem.Allocator, db_conn: db.Database, targ
     std.debug.print("Uninstalling {s}...\n", .{target});
 
     try hooks.runHook(allocator, db_conn, .pre_uninstall, id, version, skip_prompts);
-    
+
     // Core uninstall logic would go here
     // e.g. deleting from DB, removing files/shims, etc.
-    
+
     try hooks.runHook(allocator, db_conn, .post_uninstall, id, version, skip_prompts);
 }
