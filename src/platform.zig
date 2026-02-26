@@ -136,3 +136,19 @@ pub fn getBingetShareDir(allocator: std.mem.Allocator) ![]const u8 {
         return std.fs.path.join(allocator, &.{ home, ".local", "share", "binget" });
     }
 }
+
+pub fn isAdmin() bool {
+    const builtin = @import("builtin");
+    if (builtin.os.tag == .windows) {
+        var child = std.process.Child.init(&[_][]const u8{ "net", "session" }, std.heap.page_allocator);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Ignore;
+        const term = child.spawnAndWait() catch return false;
+        switch (term) {
+            .Exited => |code| return code == 0,
+            else => return false,
+        }
+    } else {
+        return std.posix.geteuid() == 0;
+    }
+}

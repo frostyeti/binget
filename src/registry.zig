@@ -129,6 +129,28 @@ pub const Manifest = struct {
 
 // ... platform manifest parsing to follow
 
+pub const RegistryKey = struct {
+    path: []const u8,
+    name: ?[]const u8 = null,
+    type: ?[]const u8 = null,
+    value: ?[]const u8 = null,
+    ensure_exists: ?bool = null,
+    remove: ?bool = null,
+};
+
+pub const Shortcut = struct {
+    name: []const u8,
+    target: []const u8,
+    location: []const u8,
+    icon: ?[]const u8 = null,
+};
+
+pub const Link = struct {
+    target: []const u8,
+    link: []const u8,
+    type: []const u8,
+};
+
 pub const InstallModeConfig = struct {
     type: []const u8,
     format: ?[]const u8 = null,
@@ -137,6 +159,9 @@ pub const InstallModeConfig = struct {
     extract_dir: ?[]const u8 = null,
     bin: ?[][]const u8 = null,
     package: ?[]const u8 = null, // for apt, winget, etc
+    registry_keys: ?[]RegistryKey = null,
+    shortcuts: ?[]Shortcut = null,
+    links: ?[]Link = null,
 };
 
 pub const PlatformManifest = struct {
@@ -169,6 +194,52 @@ fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value
         config.bin = bins;
     }
     
+    if (obj.get("registry_keys")) |v| {
+        const arr = v.array;
+        var keys = try allocator.alloc(RegistryKey, arr.items.len);
+        for (arr.items, 0..) |item, i| {
+            const k_obj = item.object;
+            keys[i] = RegistryKey{
+                .path = try allocator.dupe(u8, k_obj.get("path").?.string),
+                .name = if (k_obj.get("name")) |n| try allocator.dupe(u8, n.string) else null,
+                .type = if (k_obj.get("type")) |t| try allocator.dupe(u8, t.string) else null,
+                .value = if (k_obj.get("value")) |val| try allocator.dupe(u8, val.string) else null,
+                .ensure_exists = if (k_obj.get("ensure_exists")) |b| b.bool else null,
+                .remove = if (k_obj.get("remove")) |b| b.bool else null,
+            };
+        }
+        config.registry_keys = keys;
+    }
+
+    if (obj.get("shortcuts")) |v| {
+        const arr = v.array;
+        var shortcuts = try allocator.alloc(Shortcut, arr.items.len);
+        for (arr.items, 0..) |item, i| {
+            const s_obj = item.object;
+            shortcuts[i] = Shortcut{
+                .name = try allocator.dupe(u8, s_obj.get("name").?.string),
+                .target = try allocator.dupe(u8, s_obj.get("target").?.string),
+                .location = try allocator.dupe(u8, s_obj.get("location").?.string),
+                .icon = if (s_obj.get("icon")) |ic| try allocator.dupe(u8, ic.string) else null,
+            };
+        }
+        config.shortcuts = shortcuts;
+    }
+
+    if (obj.get("links")) |v| {
+        const arr = v.array;
+        var links = try allocator.alloc(Link, arr.items.len);
+        for (arr.items, 0..) |item, i| {
+            const l_obj = item.object;
+            links[i] = Link{
+                .target = try allocator.dupe(u8, l_obj.get("target").?.string),
+                .link = try allocator.dupe(u8, l_obj.get("link").?.string),
+                .type = try allocator.dupe(u8, l_obj.get("type").?.string),
+            };
+        }
+        config.links = links;
+    }
+
     return config;
 }
 
@@ -232,5 +303,31 @@ fn freeInstallModeConfig(allocator: std.mem.Allocator, m: InstallModeConfig) voi
     if (m.bin) |bins| {
         for (bins) |b| allocator.free(b);
         allocator.free(bins);
+    }
+    if (m.registry_keys) |keys| {
+        for (keys) |k| {
+            allocator.free(k.path);
+            if (k.name) |n| allocator.free(n);
+            if (k.type) |t| allocator.free(t);
+            if (k.value) |v| allocator.free(v);
+        }
+        allocator.free(keys);
+    }
+    if (m.shortcuts) |shortcuts| {
+        for (shortcuts) |s| {
+            allocator.free(s.name);
+            allocator.free(s.target);
+            allocator.free(s.location);
+            if (s.icon) |ic| allocator.free(ic);
+        }
+        allocator.free(shortcuts);
+    }
+    if (m.links) |links| {
+        for (links) |l| {
+            allocator.free(l.target);
+            allocator.free(l.link);
+            allocator.free(l.type);
+        }
+        allocator.free(links);
     }
 }

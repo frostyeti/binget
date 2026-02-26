@@ -348,6 +348,9 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         std.debug.print("Error: Unknown installer type '{s}'.\n", .{config.type});
         return error.UnknownInstallerType;
     }
+
+    const post_install = @import("post_install.zig");
+    try post_install.run(allocator, id, version_to_install, config, final_mode);
 }
 
 fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
@@ -422,23 +425,35 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     defer allocator.free(bin_dir);
     try std.fs.cwd().makePath(bin_dir);
     
+    const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
+    defer allocator.free(pkg_dir);
+    
+    std.fs.cwd().deleteTree(pkg_dir) catch {};
+    try std.fs.cwd().makePath(pkg_dir);
+
     const dest_bin_name = std.fs.path.basename(bin_name);
+    const target_exe = try std.fs.path.join(allocator, &.{ pkg_dir, dest_bin_name });
+    defer allocator.free(target_exe);
+
+    std.debug.print("Downloading: {s}\n", .{url});
+    try archive.downloadFile(allocator, url, target_exe);
+    try archive.makeExecutable(target_exe);
+
+    const shim = @import("shim.zig");
+    try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
+
+    std.debug.print("Installed {s} to {s}\n", .{dest_bin_name, bin_dir});
+
     const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
     defer allocator.free(dest_path);
-    
-    std.debug.print("Downloading: {s}\n", .{url});
-    try archive.downloadFile(allocator, url, dest_path);
-    try archive.makeExecutable(dest_path);
-    
-    std.debug.print("Successfully installed {s} to {s}\n", .{ id, dest_path });
-    
+
     const id_z = try allocator.dupeZ(u8, id);
     defer allocator.free(id_z);
     const version_z = try allocator.dupeZ(u8, version);
     defer allocator.free(version_z);
     const dest_path_z = try allocator.dupeZ(u8, dest_path);
     defer allocator.free(dest_path_z);
-
+    
     try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
 }
 
@@ -463,6 +478,12 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
     defer allocator.free(bin_dir);
     try std.fs.cwd().makePath(bin_dir);
 
+    const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
+    defer allocator.free(pkg_dir);
+    
+    std.fs.cwd().deleteTree(pkg_dir) catch {};
+    try std.fs.cwd().makePath(pkg_dir);
+
     const tmp_dir_path = try std.fs.path.join(allocator, &.{ share_dir, "tmp", id, version });
     defer allocator.free(tmp_dir_path);
 
@@ -476,42 +497,33 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
     std.debug.print("Downloading: {s}\n", .{url});
     try archive.downloadFile(allocator, url, archive_path);
 
-    const extract_dir = try std.fs.path.join(allocator, &.{ tmp_dir_path, "extracted" });
-    defer allocator.free(extract_dir);
+    const extract_dir = pkg_dir;
     
-    std.debug.print("Extracting...\n", .{});
+    std.debug.print("Extracting to {s}...\n", .{extract_dir});
     try archive.extractArchive(allocator, archive_path, extract_dir, url);
 
-    // Copy/move binaries
+    const shim = @import("shim.zig");
+
+    // Create shims
     for (config.bin.?) |bin_name| {
-        var src_path: []const u8 = undefined;
+        var target_exe: []const u8 = undefined;
         if (config.extract_dir) |ed| {
-            src_path = try std.fs.path.join(allocator, &.{ extract_dir, ed, bin_name });
+            target_exe = try std.fs.path.join(allocator, &.{ extract_dir, ed, bin_name });
         } else {
-            src_path = try std.fs.path.join(allocator, &.{ extract_dir, bin_name });
+            target_exe = try std.fs.path.join(allocator, &.{ extract_dir, bin_name });
         }
-        defer allocator.free(src_path);
+        defer allocator.free(target_exe);
+
+        try archive.makeExecutable(target_exe);
 
         const dest_bin_name = std.fs.path.basename(bin_name);
-        const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
-        defer allocator.free(dest_path);
-
-        std.fs.cwd().deleteFile(dest_path) catch {};
-
-        std.fs.cwd().rename(src_path, dest_path) catch |err| {
-            if (err == error.RenameAcrossMountPoints) {
-                try std.fs.cwd().copyFile(src_path, std.fs.cwd(), dest_path, .{});
-                try std.fs.cwd().deleteFile(src_path);
-            } else {
-                return err;
-            }
-        };
-
-        try archive.makeExecutable(dest_path);
-        std.debug.print("Installed {s} to {s}\n", .{bin_name, dest_path});
+        try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
         
         // Record install for the first binary
         if (std.mem.eql(u8, bin_name, config.bin.?[0])) {
+            const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
+            defer allocator.free(dest_path);
+
             const id_z = try allocator.dupeZ(u8, id);
             defer allocator.free(id_z);
             const version_z = try allocator.dupeZ(u8, version);
