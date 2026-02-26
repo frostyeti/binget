@@ -5,7 +5,7 @@ pub const ShellType = enum {
     zsh,
     fish,
     powershell, // Windows PowerShell
-    pwsh,       // PowerShell Core (cross-platform)
+    pwsh, // PowerShell Core (cross-platform)
     cmd,
     unknown,
 };
@@ -23,7 +23,7 @@ pub fn formatPathForShell(allocator: std.mem.Allocator, path: []const u8, shell:
                 formatted[0] = '/';
                 formatted[1] = std.ascii.toLower(path[0]);
                 len = 2;
-                
+
                 var i: usize = 2;
                 while (i < path.len) : (i += 1) {
                     const c = path[i];
@@ -71,7 +71,7 @@ pub fn formatPathForShell(allocator: std.mem.Allocator, path: []const u8, shell:
         }
         return allocator.realloc(formatted, len);
     }
-    
+
     // Default fallback
     @memcpy(formatted[0..path.len], path);
     return allocator.realloc(formatted, path.len);
@@ -87,7 +87,7 @@ pub fn detectShell(allocator: std.mem.Allocator) !ShellType {
     if (std.mem.endsWith(u8, shell_env, "zsh")) return .zsh;
     if (std.mem.endsWith(u8, shell_env, "fish")) return .fish;
     if (std.mem.endsWith(u8, shell_env, "pwsh")) return .pwsh;
-    
+
     if (env_map.get("PSModulePath") != null) return .powershell;
     if (env_map.get("COMSPEC") != null) return .cmd;
     return .unknown;
@@ -169,4 +169,21 @@ pub fn isAdmin() bool {
     } else {
         return std.posix.geteuid() == 0;
     }
+}
+
+pub fn getHomeDir(allocator: std.mem.Allocator) ![]const u8 {
+    const builtin = @import("builtin");
+    var env_map = try std.process.getEnvMap(allocator);
+    defer env_map.deinit();
+
+    if (builtin.os.tag == .windows) {
+        if (env_map.get("USERPROFILE")) |p| {
+            return allocator.dupe(u8, p);
+        }
+    } else {
+        if (env_map.get("HOME")) |p| {
+            return allocator.dupe(u8, p);
+        }
+    }
+    return error.EnvironmentVariableNotFound;
 }

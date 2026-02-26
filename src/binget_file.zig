@@ -48,9 +48,8 @@ pub fn parseBingetFile(allocator: std.mem.Allocator, content: []const u8) !Binge
     var current_section: Section = .none;
     var bin_start: ?usize = 0; // default to 0 to capture everything before headers as bin
 
-    
     var lines = std.mem.splitScalar(u8, content, '\n');
-    
+
     var in_multiline: bool = false;
     var multiline_key: ?[]const u8 = null;
     errdefer {
@@ -135,9 +134,13 @@ pub fn parseBingetFile(allocator: std.mem.Allocator, content: []const u8) !Binge
                 try file.dotenv_paths.append(allocator, try allocator.dupe(u8, path));
             },
             .env => {
-                if (std.mem.indexOfScalar(u8, content_str, '=')) |eq_idx| {
-                    const key = std.mem.trim(u8, content_str[0..eq_idx], " \t");
-                    var val = std.mem.trim(u8, content_str[eq_idx + 1..], " \t");
+                var separator_idx = std.mem.indexOfScalar(u8, content_str, '=');
+                if (separator_idx == null) {
+                    separator_idx = std.mem.indexOfScalar(u8, content_str, ':');
+                }
+                if (separator_idx) |idx| {
+                    const key = std.mem.trim(u8, content_str[0..idx], " \t");
+                    var val = std.mem.trim(u8, content_str[idx + 1 ..], " \t");
 
                     if (val.len > 0 and (val[0] == '"' or val[0] == '\'' or val[0] == '`')) {
                         const q = val[0];

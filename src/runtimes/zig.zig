@@ -35,9 +35,9 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer parsed.deinit();
 
     const root = parsed.value.object;
-    
+
     var target_version: []const u8 = undefined;
-    
+
     if (version_opt) |v| {
         target_version = v;
     } else {
@@ -60,7 +60,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         if (latest == null) return error.VersionNotFound;
         target_version = latest.?;
     }
-    
+
     std.debug.print("Target Zig version: {s}\n", .{target_version});
 
     const version_obj = root.get(target_version) orelse {
@@ -77,7 +77,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "x86",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_str = switch (builtin.os.tag) {
         .linux => "linux",
         .macos => "macos",
@@ -85,15 +85,15 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .freebsd => "freebsd",
         else => return error.UnsupportedOS,
     };
-    
-    const platform_key = try std.fmt.allocPrint(allocator, "{s}-{s}", .{arch_str, os_str});
+
+    const platform_key = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ arch_str, os_str });
     defer allocator.free(platform_key);
-    
+
     const platform_obj = version_obj.object.get(platform_key) orelse {
-        std.debug.print("Platform {s} not found for version {s}.\n", .{platform_key, target_version});
+        std.debug.print("Platform {s} not found for version {s}.\n", .{ platform_key, target_version });
         return error.PlatformNotFound;
     };
-    
+
     const tarball_url = platform_obj.object.get("tarball").?.string;
     const shasum = platform_obj.object.get("shasum").?.string;
 
@@ -113,7 +113,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[0]);
         allocator.free(bins);
     }
-    
+
     const config = registry.InstallModeConfig{
         .type = try allocator.dupe(u8, "archive"),
         .url = try allocator.dupe(u8, tarball_url),
@@ -127,8 +127,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.checksum.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Zig from {s}...\n", .{tarball_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "zig", target_version, config, mode);
 }

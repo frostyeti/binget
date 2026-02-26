@@ -25,12 +25,12 @@ fn promptUser(message: []const u8) !bool {
 
     var buf: [16]u8 = undefined;
     const bytes_read = try std.fs.File.stdin().read(&buf);
-    
+
     if (bytes_read == 0) return false;
-    
+
     const line = buf[0..bytes_read];
     const trimmed = std.mem.trim(u8, line, " \r\n\t");
-    
+
     if (std.ascii.eqlIgnoreCase(trimmed, "y") or std.ascii.eqlIgnoreCase(trimmed, "yes")) {
         return true;
     }

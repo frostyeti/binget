@@ -18,7 +18,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     } else {
         const url = "https://github.com/jdx/ruby/releases/latest";
         const uri = try std.Uri.parse(url);
-        
+
         var req = try client.request(.GET, uri, .{ .redirect_behavior = .unhandled });
         defer req.deinit();
 
@@ -32,7 +32,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         }
 
         const location = res.head.location orelse return error.MissingLocationHeader;
-        
+
         const tag_prefix = "/tag/";
         if (std.mem.lastIndexOf(u8, location, tag_prefix)) |idx| {
             const v_str = location[idx + tag_prefix.len ..];
@@ -46,7 +46,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         }
     }
     defer allocator.free(target_version);
-    
+
     std.debug.print("Target Ruby version: {s}\n", .{target_version});
 
     var platform_str: []const u8 = undefined;
@@ -68,10 +68,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         return error.UnsupportedOS;
     }
 
-    const filename = try std.fmt.allocPrint(allocator, "ruby-{s}.{s}.tar.gz", .{target_version, platform_str});
+    const filename = try std.fmt.allocPrint(allocator, "ruby-{s}.{s}.tar.gz", .{ target_version, platform_str });
     defer allocator.free(filename);
-    
-    const download_url = try std.fmt.allocPrint(allocator, "https://github.com/jdx/ruby/releases/download/{s}/{s}", .{target_version, filename});
+
+    const download_url = try std.fmt.allocPrint(allocator, "https://github.com/jdx/ruby/releases/download/{s}/{s}", .{ target_version, filename });
     defer allocator.free(download_url);
 
     var bins = try allocator.alloc([]const u8, 3);
@@ -84,7 +84,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[2]);
         allocator.free(bins);
     }
-    
+
     const extract_dir = try std.fmt.allocPrint(allocator, "ruby-{s}", .{target_version});
     defer allocator.free(extract_dir);
 
@@ -100,8 +100,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.url.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Ruby from {s}...\n", .{download_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "ruby", target_version, config, mode);
 }

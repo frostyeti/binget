@@ -24,7 +24,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         }
     } else {
         const url = "https://dl.deno.land/release-latest.txt";
-        
+
         const uri = try std.Uri.parse(url);
         var req = try client.request(.GET, uri, .{});
         defer req.deinit();
@@ -53,7 +53,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer {
         allocator.free(deno_version_str);
     }
-    
+
     std.debug.print("Target Deno version: {s}\n", .{target_version});
 
     const arch_str = switch (builtin.cpu.arch) {
@@ -61,7 +61,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .aarch64 => "aarch64",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_str = switch (builtin.os.tag) {
         .linux => "unknown-linux-gnu",
         .macos => "apple-darwin",
@@ -69,13 +69,13 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => return error.UnsupportedOS,
     };
 
-    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{arch_str, os_str});
+    const target_triple = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ arch_str, os_str });
     defer allocator.free(target_triple);
 
     const filename = try std.fmt.allocPrint(allocator, "deno-{s}.zip", .{target_triple});
     defer allocator.free(filename);
-    
-    const zip_url = try std.fmt.allocPrint(allocator, "https://dl.deno.land/release/{s}/{s}", .{deno_version_str, filename});
+
+    const zip_url = try std.fmt.allocPrint(allocator, "https://dl.deno.land/release/{s}/{s}", .{ deno_version_str, filename });
     defer allocator.free(zip_url);
 
     var bins = try allocator.alloc([]const u8, 1);
@@ -84,7 +84,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[0]);
         allocator.free(bins);
     }
-    
+
     const config = registry.InstallModeConfig{
         .type = try allocator.dupe(u8, "archive"),
         .url = try allocator.dupe(u8, zip_url),
@@ -97,8 +97,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.url.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Deno from {s}...\n", .{zip_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "deno", target_version, config, mode);
 }

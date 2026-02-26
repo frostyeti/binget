@@ -15,7 +15,7 @@ pub fn getAssetArchAndOs() struct { arch: []const u8, os: []const u8 } {
 
 pub fn guessAsset(assets: []github.Release.Asset) ?[]const u8 {
     const sys = getAssetArchAndOs();
-    
+
     var best_score: i32 = -1;
     var best_url: ?[]const u8 = null;
 
@@ -49,8 +49,8 @@ pub fn guessAsset(assets: []github.Release.Asset) ?[]const u8 {
 }
 
 pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: []const u8, repo: []const u8, version_opt: ?[]const u8, mode: install_cmd.InstallMode) !void {
-    std.debug.print("Fetching release info for {s}/{s}...\n", .{owner, repo});
-    
+    std.debug.print("Fetching release info for {s}/{s}...\n", .{ owner, repo });
+
     var release: github.Release = undefined;
     if (version_opt) |ver| {
         release = try github.fetchReleaseByTag(allocator, owner, repo, ver);
@@ -67,7 +67,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
     };
 
     std.debug.print("Downloading: {s}\n", .{url});
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
@@ -97,7 +97,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
     defer allocator.free(exe_name);
 
     var found_exe: ?[]const u8 = null;
-    
+
     var dir = try std.fs.cwd().openDir(extract_dir, .{ .iterate = true });
     defer dir.close();
 
@@ -120,7 +120,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
             } else {
                 if (ext.len == 0) is_possible_bin = true;
             }
-            
+
             if (is_possible_bin) {
                 const stat = try dir.statFile(entry.path);
                 if (stat.size > largest_size) {
@@ -157,19 +157,19 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
             bin_dir = try platform.getInstallDir(allocator, false);
         }
         defer allocator.free(bin_dir);
-        
+
         try std.fs.cwd().makePath(bin_dir);
 
         const link_path = try std.fs.path.join(allocator, &.{ bin_dir, exe_name });
         defer allocator.free(link_path);
 
         std.fs.cwd().deleteFile(link_path) catch {};
-        
+
         try std.fs.cwd().symLink(final_exe_path, link_path, .{});
-        
+
         std.debug.print("Successfully installed {s} to {s}\n", .{ repo, link_path });
 
-        const target = try std.fmt.allocPrint(allocator, "github.com/{s}/{s}", .{owner, repo});
+        const target = try std.fmt.allocPrint(allocator, "github.com/{s}/{s}", .{ owner, repo });
         defer allocator.free(target);
         const name_z = try allocator.dupeZ(u8, target);
         defer allocator.free(name_z);
@@ -186,18 +186,18 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
 
 pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version_opt: ?[]const u8, mode: install_cmd.InstallMode, skip_prompts: bool) !void {
     std.debug.print("Resolving package '{s}' from default registry...\n", .{id});
-    
+
     const vf = registry.fetchVersions(allocator, id) catch |err| {
-        std.debug.print("Error: Package '{s}' not found in registry ({}).\n", .{id, err});
+        std.debug.print("Error: Package '{s}' not found in registry ({}).\n", .{ id, err });
         return err;
     };
     defer registry.freeVersions(allocator, vf);
-    
+
     var version_to_install = vf.latest;
     if (version_opt) |ver| {
         version_to_install = ver;
     }
-    
+
     // Check if the requested version exists, and if it has CVEs
     var found_ver = false;
     for (vf.versions) |v| {
@@ -207,7 +207,7 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
                 if (cves.len > 0) {
                     std.debug.print("\n⚠️  WARNING: You are installing a version with known vulnerabilities:\n", .{});
                     for (cves) |c| {
-                        std.debug.print("  - {s} (Score: {d}): {s}\n", .{c.id, c.score, c.description});
+                        std.debug.print("  - {s} (Score: {d}): {s}\n", .{ c.id, c.score, c.description });
                     }
                     std.debug.print("\n", .{});
                 }
@@ -215,36 +215,36 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
             break;
         }
     }
-    
+
     if (!found_ver) {
-        std.debug.print("Error: Version '{s}' not found for package '{s}'.\n", .{version_to_install, id});
+        std.debug.print("Error: Version '{s}' not found for package '{s}'.\n", .{ version_to_install, id });
         return error.VersionNotFound;
     }
-    
+
     std.debug.print("Resolved version: {s}\n", .{version_to_install});
-    
+
     // Fetch the correct manifest config
     const builtin = @import("builtin");
     const os_tag = @tagName(builtin.os.tag);
     const arch_tag = @tagName(builtin.cpu.arch);
-    
+
     // Map zig standard names to our manifest nomenclature
     const os_str: []const u8 = os_tag;
     // We used to map macos to darwin, but binget-pkgs uses macos
-    
+
     const arch_str: []const u8 = arch_tag;
     // We used to map x86_64 to amd64, but binget-pkgs uses x86_64
 
-    const platform_id = try std.fmt.allocPrint(allocator, "{s}-{s}", .{os_str, arch_str});
+    const platform_id = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ os_str, arch_str });
     defer allocator.free(platform_id);
-    
+
     std.debug.print("Fetching install manifest for {s}...\n", .{platform_id});
     const manifest = registry.fetchPlatformManifest(allocator, id, version_to_install, platform_id) catch |err| {
-        std.debug.print("Error: Platform {s} is not supported for {s}@{s} ({}).\n", .{platform_id, id, version_to_install, err});
+        std.debug.print("Error: Platform {s} is not supported for {s}@{s} ({}).\n", .{ platform_id, id, version_to_install, err });
         return err;
     };
     defer registry.freePlatformManifest(allocator, manifest);
-    
+
     var active_mode: ?registry.InstallModeConfig = null;
     var final_mode = mode;
 
@@ -275,14 +275,14 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
             }
         },
     }
-    
+
     if (active_mode == null) {
         std.debug.print("Error: No valid install mode is supported by the manifest for this platform.\n", .{});
         return error.UnsupportedInstallMode;
     }
-    
+
     const config = active_mode.?;
-    std.debug.print("Executing installation type: {s} (mode: {s})\n", .{config.type, @tagName(final_mode)});
+    std.debug.print("Executing installation type: {s} (mode: {s})\n", .{ config.type, @tagName(final_mode) });
 
     const hooks = @import("hooks.zig");
     try hooks.runHook(allocator, db_conn, .pre_install, id, version_to_install, skip_prompts);
@@ -298,12 +298,12 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     } else if (std.mem.eql(u8, config.type, "build")) {
         try executeBuildInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "installer")) {
-        std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{id, config.format orelse "unknown"});
+        std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{ id, config.format orelse "unknown" });
         try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "flatpak")) {
         std.debug.print("Proxying installation to flatpak...\n", .{});
         const app_id = config.package orelse return error.MissingPackageForFlatpak;
-        
+
         var argv = try allocator.alloc([]const u8, 6);
         defer allocator.free(argv);
         argv[0] = "flatpak";
@@ -312,11 +312,11 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         argv[3] = "--noninteractive";
         argv[4] = "flathub";
         argv[5] = app_id;
-        
+
         var child = std.process.Child.init(argv, allocator);
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
-        
+
         const term = try child.spawnAndWait();
         switch (term) {
             .Exited => |code| {
@@ -331,9 +331,9 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         }
     } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew")) {
         std.debug.print("Proxying installation to system package manager ({s})...\n", .{config.type});
-        
+
         const pkg_name = if (config.package) |p| p else id;
-        
+
         var argv: [][]const u8 = undefined;
         if (std.mem.eql(u8, config.type, "apt")) {
             argv = try allocator.alloc([]const u8, 4);
@@ -368,7 +368,7 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         var child = std.process.Child.init(final_argv, allocator);
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
-        
+
         const term = try child.spawnAndWait();
         switch (term) {
             .Exited => |code| {
@@ -387,40 +387,40 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     const post_install = @import("post_install.zig");
     try post_install.run(allocator, id, version_to_install, config, final_mode);
-    
+
     try hooks.runHook(allocator, db_conn, .post_install, id, version_to_install, skip_prompts);
 }
 
 fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
     _ = db_conn;
     if (config.url == null) return error.InvalidManifest;
-    
+
     if (mode == .shim) {
         std.debug.print("Error: Native installers do not support --shim mode. Use --user or --global.\n", .{});
         return error.UnsupportedInstallMode;
     }
-    
+
     const url = config.url.?;
     const format = config.format orelse "unknown";
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
     const tmp_dir_path = try std.fs.path.join(allocator, &.{ share_dir, ".tmp" });
     defer allocator.free(tmp_dir_path);
     try std.fs.cwd().makePath(tmp_dir_path);
-    
-    const filename = try std.fmt.allocPrint(allocator, "{s}-{s}.{s}", .{id, version, format});
+
+    const filename = try std.fmt.allocPrint(allocator, "{s}-{s}.{s}", .{ id, version, format });
     defer allocator.free(filename);
-    
+
     const download_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, filename });
     defer allocator.free(download_path);
-    
+
     std.debug.print("Downloading installer to: {s}\n", .{download_path});
     try archive.downloadFile(allocator, url, download_path);
-    
+
     std.debug.print("Executing system installer...\n", .{});
-    
+
     var args = std.ArrayList([]const u8).empty;
     defer args.deinit(allocator);
 
@@ -479,11 +479,11 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
             try args.append(allocator, "powershell");
             try args.append(allocator, "-NoProfile");
             try args.append(allocator, "-Command");
-            
+
             var ps_cmd = std.ArrayList(u8).empty;
             defer ps_cmd.deinit(allocator);
             if (args_str.items.len > 0) {
-                try ps_cmd.writer(allocator).print("Start-Process '{s}' -ArgumentList {s} -Wait -Verb RunAs", .{exe_path, args_str.items});
+                try ps_cmd.writer(allocator).print("Start-Process '{s}' -ArgumentList {s} -Wait -Verb RunAs", .{ exe_path, args_str.items });
             } else {
                 try ps_cmd.writer(allocator).print("Start-Process '{s}' -Wait -Verb RunAs", .{exe_path});
             }
@@ -534,7 +534,7 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     var child = std.process.Child.init(args.items, allocator);
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;
-    
+
     std.debug.print("Running installer: ", .{});
     for (args.items) |arg| std.debug.print("{s} ", .{arg});
     std.debug.print("\n", .{});
@@ -551,7 +551,7 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
         else => {
             std.debug.print("Installer failed to complete.\n", .{});
             return error.InstallFailed;
-        }
+        },
     }
 }
 
@@ -560,22 +560,22 @@ fn executeAppImageInstall(allocator: std.mem.Allocator, db_conn: db.Database, id
     try executeRawInstall(allocator, db_conn, id, version, config, mode);
 
     if (config.bin == null or config.bin.?.len == 0) return;
-    
+
     // Attempt to extract .desktop and icons if on Linux
     const builtin = @import("builtin");
     if (builtin.os.tag != .linux) return;
 
     std.debug.print("Extracting AppImage desktop integration files...\n", .{});
-    
+
     const bin_name = config.bin.?[0];
     const dest_bin_name = std.fs.path.basename(bin_name);
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
-    
+
     const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
     defer allocator.free(pkg_dir);
-    
+
     const target_exe = try std.fs.path.join(allocator, &.{ pkg_dir, dest_bin_name });
     defer allocator.free(target_exe);
 
@@ -589,17 +589,17 @@ fn executeAppImageInstall(allocator: std.mem.Allocator, db_conn: db.Database, id
     child.cwd = pkg_dir;
     child.stdout_behavior = .Ignore;
     child.stderr_behavior = .Ignore;
-    
+
     const term = child.spawnAndWait() catch |err| {
         std.debug.print("Warning: Failed to extract AppImage desktop files: {}\n", .{err});
         return;
     };
-    
+
     switch (term) {
         .Exited => |code| {
             if (code == 0) {
                 std.debug.print("AppImage contents extracted to {s}/squashfs-root\n", .{pkg_dir});
-                // Note: full integration (copying .desktop to ~/.local/share/applications) 
+                // Note: full integration (copying .desktop to ~/.local/share/applications)
                 // could be expanded here. For now we leave it extracted for shims/hooks.
             } else {
                 std.debug.print("Warning: AppImage extraction exited with code {}\n", .{code});
@@ -611,10 +611,10 @@ fn executeAppImageInstall(allocator: std.mem.Allocator, db_conn: db.Database, id
 
 fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
     if (config.url == null or config.bin == null or config.bin.?.len == 0) return error.InvalidManifest;
-    
+
     const url = config.url.?;
     const bin_name = config.bin.?[0];
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
@@ -630,10 +630,10 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     }
     defer allocator.free(bin_dir);
     try std.fs.cwd().makePath(bin_dir);
-    
+
     const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
     defer allocator.free(pkg_dir);
-    
+
     std.fs.cwd().deleteTree(pkg_dir) catch {};
     try std.fs.cwd().makePath(pkg_dir);
 
@@ -648,7 +648,7 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     const shim = @import("shim.zig");
     try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
 
-    std.debug.print("Installed {s} to {s}\n", .{dest_bin_name, bin_dir});
+    std.debug.print("Installed {s} to {s}\n", .{ dest_bin_name, bin_dir });
 
     const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
     defer allocator.free(dest_path);
@@ -659,15 +659,15 @@ fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []c
     defer allocator.free(version_z);
     const dest_path_z = try allocator.dupeZ(u8, dest_path);
     defer allocator.free(dest_path_z);
-    
+
     try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
 }
 
 fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
     if (config.url == null or config.bin == null or config.bin.?.len == 0) return error.InvalidManifest;
-    
+
     const url = config.url.?;
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
@@ -686,7 +686,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
     defer allocator.free(pkg_dir);
-    
+
     std.fs.cwd().deleteTree(pkg_dir) catch {};
     try std.fs.cwd().makePath(pkg_dir);
 
@@ -704,7 +704,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
     try archive.downloadFile(allocator, url, archive_path);
 
     const extract_dir = pkg_dir;
-    
+
     std.debug.print("Extracting to {s}...\n", .{extract_dir});
     try archive.extractArchive(allocator, archive_path, extract_dir, url, config.format);
 
@@ -724,7 +724,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
         const dest_bin_name = std.fs.path.basename(bin_name);
         try shim.createShim(allocator, target_exe, bin_dir, dest_bin_name);
-        
+
         // Record install for the first binary
         if (std.mem.eql(u8, bin_name, config.bin.?[0])) {
             const dest_path = try std.fs.path.join(allocator, &.{ bin_dir, dest_bin_name });
@@ -736,7 +736,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
             defer allocator.free(version_z);
             const dest_path_z = try allocator.dupeZ(u8, dest_path);
             defer allocator.free(dest_path_z);
-            
+
             try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
         }
     }
@@ -752,10 +752,10 @@ pub fn installPackage(allocator: std.mem.Allocator, db_conn: db.Database, target
 
 pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
     if (config.url == null or config.bin == null or config.bin.?.len == 0) return error.InvalidManifest;
-    
+
     const url = config.url.?;
     const builtin = @import("builtin");
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
@@ -787,17 +787,17 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
 
     const extract_dir = try std.fs.path.join(allocator, &.{ tmp_dir_path, "extracted" });
     defer allocator.free(extract_dir);
-    
+
     std.debug.print("Extracting...\n", .{});
     try archive.extractArchive(allocator, archive_path, extract_dir, url, config.format);
 
     // For a runtime, we move the ENTIRE extracted dir to packages/<id>/<version>
     const package_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
     defer allocator.free(package_dir);
-    
+
     std.fs.cwd().deleteTree(package_dir) catch {};
     try std.fs.cwd().makePath(package_dir);
-    
+
     var src_runtime_dir: []const u8 = undefined;
     if (config.extract_dir) |ed| {
         src_runtime_dir = try std.fs.path.join(allocator, &.{ extract_dir, ed });
@@ -812,11 +812,11 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
     // Check if there is an install.sh script in the extracted directory
     const install_sh_path = try std.fs.path.join(allocator, &.{ src_runtime_dir, "install.sh" });
     defer allocator.free(install_sh_path);
-    
+
     var installed_via_script = false;
     if (std.fs.cwd().access(install_sh_path, .{})) |_| {
         std.debug.print("Running installer script...\n", .{});
-        
+
         var argv = [_][]const u8{
             "sh",
             install_sh_path,
@@ -828,7 +828,7 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
         child.cwd = src_runtime_dir;
         child.stdout_behavior = .Inherit;
         child.stderr_behavior = .Inherit;
-        
+
         const term = try child.spawnAndWait();
         if (term != .Exited or term.Exited != 0) {
             std.debug.print("Installer script failed.\n", .{});
@@ -836,7 +836,7 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
         }
         installed_via_script = true;
     } else |_| {}
-    
+
     if (!installed_via_script) {
         std.fs.cwd().rename(src_runtime_dir, package_dir) catch |err| {
             if (err == error.RenameAcrossMountPoints) {
@@ -850,24 +850,24 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
     } else {
         std.fs.cwd().deleteTree(src_runtime_dir) catch {};
     }
-    
+
     // Now create shims in bin_dir for each bin in config.bin
     for (config.bin.?) |bin_path| {
         // bin_path might be "bin/node" or just "go"
         // we just take the basename for the shim name
         const basename = std.fs.path.basename(bin_path);
-        
+
         const actual_bin_path = try std.fs.path.join(allocator, &.{ package_dir, bin_path });
         defer allocator.free(actual_bin_path);
-        
+
         try archive.makeExecutable(actual_bin_path);
-        
+
         if (builtin.os.tag == .windows) {
             const shim_name = try std.fmt.allocPrint(allocator, "{s}.bat", .{basename});
             defer allocator.free(shim_name);
             const shim_path = try std.fs.path.join(allocator, &.{ bin_dir, shim_name });
             defer allocator.free(shim_path);
-            
+
             var f = try std.fs.cwd().createFile(shim_path, .{});
             defer f.close();
             const shim_content = try std.fmt.allocPrint(allocator, "@echo off\n\"{s}\" %*\n", .{actual_bin_path});
@@ -876,17 +876,17 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
         } else {
             const shim_path = try std.fs.path.join(allocator, &.{ bin_dir, basename });
             defer allocator.free(shim_path);
-            
+
             var f = try std.fs.cwd().createFile(shim_path, .{});
             defer f.close();
             const shim_content = try std.fmt.allocPrint(allocator, "#!/bin/sh\nexec \"{s}\" \"$@\"\n", .{actual_bin_path});
             defer allocator.free(shim_content);
             try f.writeAll(shim_content);
-            
+
             try archive.makeExecutable(shim_path);
-            std.debug.print("Created shim {s} -> {s}\n", .{shim_path, actual_bin_path});
+            std.debug.print("Created shim {s} -> {s}\n", .{ shim_path, actual_bin_path });
         }
-        
+
         if (std.mem.eql(u8, bin_path, config.bin.?[0])) {
             const id_z = try allocator.dupeZ(u8, id);
             defer allocator.free(id_z);
@@ -894,7 +894,7 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
             defer allocator.free(version_z);
             const dest_path_z = try allocator.dupeZ(u8, actual_bin_path);
             defer allocator.free(dest_path_z);
-            
+
             try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
         }
     }
@@ -902,13 +902,13 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
 
 fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
     if (config.url == null) return error.InvalidManifest;
-    
+
     const url = config.url.?;
     const format = config.format orelse "unknown";
 
     const engine = config.build_engine orelse "zig";
     std.debug.print("Build engine configured as '{s}'\n", .{engine});
-    
+
     const share_dir = try platform.getBingetShareDir(allocator);
     defer allocator.free(share_dir);
 
@@ -916,7 +916,7 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
     defer allocator.free(tmp_dir_path);
     try std.fs.cwd().makePath(tmp_dir_path);
 
-    const archive_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, try std.fmt.allocPrint(allocator, "{s}-src.{s}", .{id, format}) });
+    const archive_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, try std.fmt.allocPrint(allocator, "{s}-src.{s}", .{ id, format }) });
     defer allocator.free(archive_path);
 
     std.debug.print("Downloading source: {s}\n", .{url});
@@ -941,12 +941,12 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
     }
 
     std.debug.print("Compiling from source in {s}...\n", .{build_dir});
-    
+
     // Construct command
     var argv = std.ArrayList([]const u8).empty;
     defer argv.deinit(allocator);
     try argv.append(allocator, engine);
-    
+
     if (config.build_args) |args| {
         for (args) |arg| {
             try argv.append(allocator, arg);
@@ -958,7 +958,7 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
     child.cwd = build_dir;
     child.stdout_behavior = .Inherit;
     child.stderr_behavior = .Inherit;
-    
+
     const term = try child.spawnAndWait();
     switch (term) {
         .Exited => |code| {
@@ -975,7 +975,7 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
     // Now copy binaries over
     const package_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
     defer allocator.free(package_dir);
-    
+
     try std.fs.cwd().makePath(package_dir);
 
     // Use bin mapping from manifest
@@ -989,7 +989,7 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
             defer allocator.free(full_bin_dest);
 
             try std.fs.cwd().copyFile(full_bin_src, std.fs.cwd(), full_bin_dest, .{});
-            
+
             // Mark executable
             const builtin = @import("builtin");
             if (builtin.os.tag != .windows) {
@@ -1010,16 +1010,16 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
 
             const shim = @import("shim.zig");
             try shim.createShim(allocator, full_bin_dest, bin_dir, dest_bin_name);
-            std.debug.print("Installed compiled binary {s} to {s}\n", .{dest_bin_name, bin_dir});
-            
+            std.debug.print("Installed compiled binary {s} to {s}\n", .{ dest_bin_name, bin_dir });
+
             const dest_path_z = try allocator.dupeZ(u8, bin_dir);
             defer allocator.free(dest_path_z);
-            
+
             const id_z = try allocator.dupeZ(u8, id);
             defer allocator.free(id_z);
             const version_z = try allocator.dupeZ(u8, version);
             defer allocator.free(version_z);
-            
+
             const is_global = if (mode == .global) true else false;
             try db_conn.recordInstall(id_z, version_z, dest_path_z, is_global);
         }

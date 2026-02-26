@@ -12,7 +12,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer client.deinit();
 
     const url = "https://nodejs.org/dist/index.json";
-    
+
     const uri = try std.Uri.parse(url);
     var req = try client.request(.GET, uri, .{});
     defer req.deinit();
@@ -37,10 +37,10 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer parsed.deinit();
 
     const root = parsed.value.array;
-    
+
     var target_version: []const u8 = undefined;
     var node_version_str: []const u8 = undefined; // e.g. "v20.0.0"
-    
+
     if (version_opt) |v| {
         target_version = v;
         if (std.mem.startsWith(u8, v, "v")) {
@@ -58,7 +58,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
     defer {
         allocator.free(node_version_str);
     }
-    
+
     std.debug.print("Target Node.js version: {s}\n", .{target_version});
 
     // Find the version object
@@ -70,7 +70,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
             break;
         }
     }
-    
+
     if (version_obj == null) {
         std.debug.print("Version {s} not found.\n", .{node_version_str});
         return error.VersionNotFound;
@@ -85,7 +85,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "x86",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_prefix = switch (builtin.os.tag) {
         .linux => "linux",
         .macos => "osx",
@@ -113,9 +113,9 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => "",
     };
 
-    const expected_file_key = try std.fmt.allocPrint(allocator, "{s}-{s}{s}", .{os_prefix, arch_str, ext_idx});
+    const expected_file_key = try std.fmt.allocPrint(allocator, "{s}-{s}{s}", .{ os_prefix, arch_str, ext_idx });
     defer allocator.free(expected_file_key);
-    
+
     const files = version_obj.?.get("files").?.array;
     var found_platform = false;
     for (files.items) |file_val| {
@@ -124,16 +124,16 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
             break;
         }
     }
-    
+
     if (!found_platform) {
-        std.debug.print("Platform {s} not found for version {s}.\n", .{expected_file_key, node_version_str});
+        std.debug.print("Platform {s} not found for version {s}.\n", .{ expected_file_key, node_version_str });
         return error.PlatformNotFound;
     }
 
-    const filename = try std.fmt.allocPrint(allocator, "node-{s}-{s}-{s}.{s}", .{node_version_str, os_dl_str, arch_str, ext});
+    const filename = try std.fmt.allocPrint(allocator, "node-{s}-{s}-{s}.{s}", .{ node_version_str, os_dl_str, arch_str, ext });
     defer allocator.free(filename);
-    
-    const tarball_url = try std.fmt.allocPrint(allocator, "https://nodejs.org/dist/{s}/{s}", .{node_version_str, filename});
+
+    const tarball_url = try std.fmt.allocPrint(allocator, "https://nodejs.org/dist/{s}/{s}", .{ node_version_str, filename });
     defer allocator.free(tarball_url);
 
     // Fetch SHASUMS256.txt to get the checksum
@@ -192,9 +192,9 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[2]);
         allocator.free(bins);
     }
-    
+
     // Extracted directory name inside the archive is the filename without extension
-    const extract_dir = try std.fmt.allocPrint(allocator, "node-{s}-{s}-{s}", .{node_version_str, os_dl_str, arch_str});
+    const extract_dir = try std.fmt.allocPrint(allocator, "node-{s}-{s}-{s}", .{ node_version_str, os_dl_str, arch_str });
     defer allocator.free(extract_dir);
 
     const config = registry.InstallModeConfig{
@@ -210,8 +210,8 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.checksum.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Node.js from {s}...\n", .{tarball_url});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "node", target_version, config, mode);
 }

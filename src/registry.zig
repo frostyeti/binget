@@ -66,20 +66,20 @@ pub fn fetchVersions(allocator: std.mem.Allocator, id: []const u8) !VersionsFile
 
     const root = parsed.value.object;
     const latest = root.get("latest").?.string;
-    
+
     const versions_arr = root.get("versions").?.array;
     var parsed_versions = try allocator.alloc(VersionInfo, versions_arr.items.len);
-    
+
     for (versions_arr.items, 0..) |v_val, i| {
         const v_obj = v_val.object;
-        
+
         var cves: ?[]Cve = null;
         if (v_obj.get("cves")) |cves_val| {
             const c_arr = cves_val.array;
             cves = try allocator.alloc(Cve, c_arr.items.len);
             for (c_arr.items, 0..) |c_item, j| {
                 const c_obj = c_item.object;
-                
+
                 // score can be int or float in JSON
                 var score: f64 = 0;
                 if (c_obj.get("score")) |sv| {
@@ -89,7 +89,7 @@ pub fn fetchVersions(allocator: std.mem.Allocator, id: []const u8) !VersionsFile
                         else => {},
                     }
                 }
-                
+
                 cves.?[j] = Cve{
                     .id = try allocator.dupe(u8, c_obj.get("id").?.string),
                     .score = score,
@@ -97,7 +97,7 @@ pub fn fetchVersions(allocator: std.mem.Allocator, id: []const u8) !VersionsFile
                 };
             }
         }
-        
+
         parsed_versions[i] = VersionInfo{
             .version = try allocator.dupe(u8, v_obj.get("version").?.string),
             .status = try allocator.dupe(u8, v_obj.get("status").?.string),
@@ -188,7 +188,7 @@ pub const PlatformManifest = struct {
 
 fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value) !InstallModeConfig {
     const obj = mode_val.object;
-    
+
     var config = InstallModeConfig{
         .type = try allocator.dupe(u8, obj.get("type").?.string),
     };
@@ -198,7 +198,7 @@ fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value
     if (obj.get("checksum")) |v| config.checksum = try allocator.dupe(u8, v.string);
     if (obj.get("extract_dir")) |v| config.extract_dir = try allocator.dupe(u8, v.string);
     if (obj.get("package")) |v| config.package = try allocator.dupe(u8, v.string);
-    
+
     if (obj.get("bin")) |v| {
         const bin_arr = v.array;
         var bins = try allocator.alloc([]const u8, bin_arr.items.len);
@@ -207,7 +207,7 @@ fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value
         }
         config.bin = bins;
     }
-    
+
     if (obj.get("registry_keys")) |v| {
         const arr = v.array;
         var keys = try allocator.alloc(RegistryKey, arr.items.len);
@@ -263,7 +263,7 @@ fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value
         }
         config.build_args = args;
     }
-    
+
     if (obj.get("silent_args")) |v| {
         const args_arr = v.array;
         var args = try allocator.alloc([]const u8, args_arr.items.len);
@@ -311,13 +311,13 @@ pub fn fetchPlatformManifest(allocator: std.mem.Allocator, id: []const u8, versi
 
     const root = parsed.value.object;
     const modes_obj = root.get("install_modes").?.object;
-    
+
     var manifest = PlatformManifest{ .install_modes = .{} };
-    
+
     if (modes_obj.get("shim")) |v| manifest.install_modes.shim = try parseInstallModeConfig(allocator, v);
     if (modes_obj.get("user")) |v| manifest.install_modes.user = try parseInstallModeConfig(allocator, v);
     if (modes_obj.get("global")) |v| manifest.install_modes.global = try parseInstallModeConfig(allocator, v);
-    
+
     return manifest;
 }
 

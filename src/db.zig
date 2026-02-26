@@ -31,14 +31,14 @@ pub const Database = struct {
             .id = 1,
             .name = "001_initial_schema",
             .up =
-                \\CREATE TABLE installed_packages (
-                \\  id INTEGER PRIMARY KEY AUTOINCREMENT,
-                \\  name TEXT NOT NULL,
-                \\  version TEXT NOT NULL,
-                \\  install_path TEXT NOT NULL,
-                \\  is_global BOOLEAN NOT NULL DEFAULT 0,
-                \\  UNIQUE(name, version)
-                \\);
+            \\CREATE TABLE installed_packages (
+            \\  id INTEGER PRIMARY KEY AUTOINCREMENT,
+            \\  name TEXT NOT NULL,
+            \\  version TEXT NOT NULL,
+            \\  install_path TEXT NOT NULL,
+            \\  is_global BOOLEAN NOT NULL DEFAULT 0,
+            \\  UNIQUE(name, version)
+            \\);
             ,
         },
         // Future migrations can be added here
@@ -57,7 +57,7 @@ pub const Database = struct {
 
         for (migrations) |mig| {
             var applied = false;
-            
+
             var stmt: ?*c.sqlite3_stmt = null;
             const check_query = "SELECT 1 FROM migrations WHERE id = ?";
             if (c.sqlite3_prepare_v2(self.db, check_query, -1, &stmt, null) == c.SQLITE_OK) {
@@ -72,11 +72,11 @@ pub const Database = struct {
                 std.debug.print("Running migration: {s}...\n", .{mig.name});
                 // Use a transaction for the migration
                 try self.exec("BEGIN TRANSACTION;");
-                
+
                 // We use c.sqlite3_exec directly for multiple statements in migration.up
                 var err_msg: [*c]u8 = null;
                 if (c.sqlite3_exec(self.db, mig.up.ptr, null, null, &err_msg) != c.SQLITE_OK) {
-                    std.debug.print("Migration {s} failed: {s}\n", .{mig.name, err_msg});
+                    std.debug.print("Migration {s} failed: {s}\n", .{ mig.name, err_msg });
                     c.sqlite3_free(err_msg);
                     _ = self.exec("ROLLBACK;") catch {};
                     return error.MigrationFailed;
@@ -88,13 +88,13 @@ pub const Database = struct {
                     _ = c.sqlite3_bind_int(record_stmt, 1, mig.id);
                     _ = c.sqlite3_bind_text(record_stmt, 2, mig.name.ptr, -1, c.SQLITE_STATIC);
                     if (c.sqlite3_step(record_stmt) != c.SQLITE_DONE) {
-                         _ = self.exec("ROLLBACK;") catch {};
-                         _ = c.sqlite3_finalize(record_stmt);
-                         return error.MigrationRecordFailed;
+                        _ = self.exec("ROLLBACK;") catch {};
+                        _ = c.sqlite3_finalize(record_stmt);
+                        return error.MigrationRecordFailed;
                     }
                     _ = c.sqlite3_finalize(record_stmt);
                 }
-                
+
                 try self.exec("COMMIT;");
             }
         }
@@ -112,7 +112,7 @@ pub const Database = struct {
     pub fn recordInstall(self: Database, name: [:0]const u8, version: [:0]const u8, install_path: [:0]const u8, is_global: bool) !void {
         var stmt: ?*c.sqlite3_stmt = null;
         const query = "INSERT OR REPLACE INTO installed_packages (name, version, install_path, is_global) VALUES (?, ?, ?, ?)";
-        
+
         if (c.sqlite3_prepare_v2(self.db, query, -1, &stmt, null) != c.SQLITE_OK) {
             return error.SqlitePrepareFailed;
         }
@@ -131,7 +131,7 @@ pub const Database = struct {
     pub fn getInstalledVersion(self: Database, allocator: std.mem.Allocator, name: [:0]const u8) !?[]u8 {
         var stmt: ?*c.sqlite3_stmt = null;
         const query = "SELECT version FROM installed_packages WHERE name = ? ORDER BY id DESC LIMIT 1";
-        
+
         if (c.sqlite3_prepare_v2(self.db, query, -1, &stmt, null) != c.SQLITE_OK) {
             return error.SqlitePrepareFailed;
         }

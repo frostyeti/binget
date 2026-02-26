@@ -44,7 +44,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         .x86 => "i686",
         else => return error.UnsupportedArch,
     };
-    
+
     const os_str = switch (builtin.os.tag) {
         .linux => "unknown-linux-gnu",
         .macos => "apple-darwin",
@@ -52,7 +52,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         else => return error.UnsupportedOS,
     };
 
-    const target_suffix = try std.fmt.allocPrint(allocator, "{s}-{s}-install_only.tar.gz", .{arch_str, os_str});
+    const target_suffix = try std.fmt.allocPrint(allocator, "{s}-{s}-install_only.tar.gz", .{ arch_str, os_str });
     defer allocator.free(target_suffix);
 
     var best_version: ?[]const u8 = null;
@@ -63,22 +63,22 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         const obj = asset.object;
         const name = obj.get("name").?.string;
         const download_url = obj.get("browser_download_url").?.string;
-        
+
         if (!std.mem.startsWith(u8, name, "cpython-")) continue;
         if (!std.mem.endsWith(u8, name, target_suffix)) continue;
-        
+
         // Extract version
         const v_start = "cpython-".len;
         if (std.mem.indexOf(u8, name, "+")) |plus_idx| {
             const v_str = name[v_start..plus_idx];
-            
+
             var matches = false;
             if (version_opt) |v| {
                 if (std.mem.startsWith(u8, v_str, v)) matches = true;
             } else {
                 matches = true;
             }
-            
+
             if (matches) {
                 // If we don't have one, or this one is "higher" (simple lexicographical for now, usually sufficient since they pad, actually 3.9 vs 3.10 is bad string compare, but we just take first match or implement simple logic)
                 // For simplicity, we just take the first match if version provided, else we want the highest.
@@ -98,12 +98,12 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
             }
         }
     }
-    
+
     if (best_version == null or best_url == null) {
         std.debug.print("Could not find suitable python binary for target {s}.\n", .{target_suffix});
         return error.VersionNotFound;
     }
-    
+
     defer allocator.free(best_version.?);
     defer allocator.free(best_url.?);
 
@@ -124,7 +124,7 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(bins[1]);
         allocator.free(bins);
     }
-    
+
     const config = registry.InstallModeConfig{
         .type = try allocator.dupe(u8, "archive"),
         .url = try allocator.dupe(u8, best_url.?),
@@ -137,9 +137,9 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
         allocator.free(config.url.?);
         allocator.free(config.extract_dir.?);
     }
-    
+
     std.debug.print("Downloading Python from {s}...\n", .{best_url.?});
-    
+
     try core.executeRuntimeInstall(allocator, db_conn, "python", best_version.?, config, mode);
 }
 
@@ -147,14 +147,14 @@ pub fn install(allocator: std.mem.Allocator, db_conn: db.Database, version_opt: 
 fn compareVersions(v1: []const u8, v2: []const u8) bool {
     var it1 = std.mem.splitScalar(u8, v1, '.');
     var it2 = std.mem.splitScalar(u8, v2, '.');
-    
+
     while (true) {
         const p1 = it1.next();
         const p2 = it2.next();
         if (p1 == null and p2 == null) return false;
         if (p1 != null and p2 == null) return true;
         if (p1 == null and p2 != null) return false;
-        
+
         const n1 = std.fmt.parseInt(u32, p1.?, 10) catch 0;
         const n2 = std.fmt.parseInt(u32, p2.?, 10) catch 0;
         if (n1 > n2) return true;
