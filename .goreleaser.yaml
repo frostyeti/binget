@@ -17,14 +17,16 @@ archives:
   - formats:
       - tar.gz
     name_template: >-
-      {{ .ProjectName }}-{{ .Os }}-{{ if eq .Arch "amd64" }}x86_64{{ else if eq .Arch "arm64" }}aarch64{{ else }}{{ .Arch }}{{ end }}-v{{ .Version }}
+      {{ .ProjectName }}-{{ .Os }}-{{ if eq .Arch "x86_64" }}amd64{{ else if eq .Arch "amd64" }}amd64{{ else if eq .Arch "aarch64" }}arm64{{ else if eq .Arch "arm64" }}arm64{{ else }}{{ .Arch }}{{ end }}-v{{ .Version }}
     format_overrides:
       - goos: windows
         formats:
           - zip
 
 nfpms:
-  - formats:
+  - file_name_template: >-
+      {{ .ProjectName }}-{{ .Os }}-{{ if eq .Arch "x86_64" }}amd64{{ else if eq .Arch "amd64" }}amd64{{ else if eq .Arch "aarch64" }}arm64{{ else if eq .Arch "arm64" }}arm64{{ else }}{{ .Arch }}{{ end }}-v{{ .Version }}
+    formats:
       - deb
       - rpm
       - apk

@@ -21,7 +21,7 @@ if ($Version -eq "latest") {
 }
 
 # Detect Architecture
-$ARCH = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") { "x86_64" } else { "aarch64" }
+$ARCH = if ($env:PROCESSOR_ARCHITECTURE -eq "AMD64") { "amd64" } else { "arm64" }
 
 $FILENAME = "binget-windows-${ARCH}-v${Version}.zip"
 $URL = "https://github.com/${REPO}/releases/download/v${Version}/${FILENAME}"
