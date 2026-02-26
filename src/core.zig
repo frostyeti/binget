@@ -266,6 +266,9 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         try executeRuntimeInstall(allocator, db_conn, id, version_to_install, config, mode);
     } else if (std.mem.eql(u8, config.type, "archive")) {
         try executeArchiveInstall(allocator, db_conn, id, version_to_install, config, mode);
+    } else if (std.mem.eql(u8, config.type, "installer")) {
+        std.debug.print("⚠️  Warning: '{s}' requires an interactive system installer (format: {s})\n", .{id, config.format orelse "unknown"});
+        try executeNativeInstaller(allocator, db_conn, id, version_to_install, config, mode);
     } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew")) {
         std.debug.print("Proxying installation to system package manager ({s})...\n", .{config.type});
         
@@ -321,6 +324,56 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         std.debug.print("Error: Unknown installer type '{s}'.\n", .{config.type});
         return error.UnknownInstallerType;
     }
+}
+
+fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
+    _ = db_conn;
+    if (config.url == null) return error.InvalidManifest;
+    
+    if (mode == .shim) {
+        std.debug.print("Error: Native installers do not support --shim mode. Use --user or --global.\n", .{});
+        return error.UnsupportedInstallMode;
+    }
+    
+    const url = config.url.?;
+    const format = config.format orelse "unknown";
+    
+    const share_dir = try platform.getBingetShareDir(allocator);
+    defer allocator.free(share_dir);
+
+    const tmp_dir_path = try std.fs.path.join(allocator, &.{ share_dir, ".tmp" });
+    defer allocator.free(tmp_dir_path);
+    try std.fs.cwd().makePath(tmp_dir_path);
+    
+    const filename = try std.fmt.allocPrint(allocator, "{s}-{s}.{s}", .{id, version, format});
+    defer allocator.free(filename);
+    
+    const download_path = try std.fs.path.join(allocator, &.{ tmp_dir_path, filename });
+    defer allocator.free(download_path);
+    
+    std.debug.print("Downloading installer to: {s}\n", .{download_path});
+    try archive.downloadFile(allocator, url, download_path);
+    
+    std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
+    std.debug.print("To install '{s}', you must run the following downloaded file:\n", .{id});
+    std.debug.print("-> {s}\n\n", .{download_path});
+    
+    if (std.mem.eql(u8, format, "msi")) {
+        std.debug.print("Command: msiexec /i \"{s}\"\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "exe")) {
+        std.debug.print("Command: \"{s}\"\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "dmg")) {
+        std.debug.print("Command: hdiutil attach \"{s}\"\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "pkg")) {
+        std.debug.print("Command: sudo installer -pkg \"{s}\" -target /\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "deb")) {
+        std.debug.print("Command: sudo dpkg -i \"{s}\"\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "rpm")) {
+        std.debug.print("Command: sudo rpm -i \"{s}\"\n", .{download_path});
+    } else if (std.mem.eql(u8, format, "appimage")) {
+        std.debug.print("Command: chmod +x \"{s}\" && \"{s}\"\n", .{download_path, download_path});
+    }
+    std.debug.print("==============================\n\n", .{});
 }
 
 fn executeRawInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
