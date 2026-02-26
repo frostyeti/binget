@@ -15,6 +15,7 @@
 - Use the `gh` cli to interact with github and github.com/frostyeti projects.
 - Create separate files for integration tests if needed.
 - Write E2E tests by compiling `binget` and using it to generate files, install packages, and clean up afterwards.
+- When creating alpha releases, only bump the pre-release identifier (e.g., `v0.0.0-alpha.0` to `v0.0.0-alpha.1`). Do not bump the major, minor, or patch numbers.
 - Always prefer Zig native libraries, standard library, and cross-compilation friendly C code over complex system dependencies.
 - Keep `build.zig` and `build.zig.zon` clean and up to date.
 - Use `zig fmt` to keep the code formatted and consistent.
