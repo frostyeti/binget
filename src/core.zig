@@ -184,7 +184,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
     }
 }
 
-pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version_opt: ?[]const u8, mode: install_cmd.InstallMode) !void {
+pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version_opt: ?[]const u8, mode: install_cmd.InstallMode, skip_prompts: bool) !void {
     std.debug.print("Resolving package '{s}' from default registry...\n", .{id});
     
     const vf = registry.fetchVersions(allocator, id) catch |err| {
@@ -284,6 +284,9 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     const config = active_mode.?;
     std.debug.print("Executing installation type: {s} (mode: {s})\n", .{config.type, @tagName(final_mode)});
 
+    const hooks = @import("hooks.zig");
+    try hooks.runHook(allocator, db_conn, .pre_install, id, version_to_install, skip_prompts);
+
     if (std.mem.eql(u8, config.type, "raw")) {
         try executeRawInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "runtime")) {
@@ -315,7 +318,11 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         switch (term) {
             .Exited => |code| {
                 if (code != 0) return error.InstallFailed;
-                try db_conn.recordInstall(id, version_to_install, "flatpak", final_mode == .global);
+                const z_id = try allocator.dupeZ(u8, id);
+                defer allocator.free(z_id);
+                const z_version = try allocator.dupeZ(u8, version_to_install);
+                defer allocator.free(z_version);
+                try db_conn.recordInstall(z_id, z_version, "flatpak", final_mode == .global);
             },
             else => return error.InstallFailed,
         }
@@ -377,6 +384,8 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     const post_install = @import("post_install.zig");
     try post_install.run(allocator, id, version_to_install, config, final_mode);
+    
+    try hooks.runHook(allocator, db_conn, .post_install, id, version_to_install, skip_prompts);
 }
 
 fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
@@ -409,8 +418,8 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     
     std.debug.print("Executing system installer...\n", .{});
     
-    var args = std.ArrayList([]const u8).init(allocator);
-    defer args.deinit();
+    var args = std.ArrayList([]const u8).empty;
+    defer args.deinit(allocator);
 
     const builtin = @import("builtin");
 

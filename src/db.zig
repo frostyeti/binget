@@ -142,7 +142,7 @@ pub const Database = struct {
         if (c.sqlite3_step(stmt) == c.SQLITE_ROW) {
             const version_c = c.sqlite3_column_text(stmt, 0);
             if (version_c != null) {
-                return allocator.dupe(u8, std.mem.span(version_c));
+                return try allocator.dupe(u8, std.mem.span(version_c));
             }
         }
         return null;

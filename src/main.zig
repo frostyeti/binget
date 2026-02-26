@@ -25,6 +25,7 @@ const global_help =
     \\  upk              Install a package from a local meta.yaml file
     \\  uninstall        Uninstall a package
     \\  upgrade          Upgrade an installed package
+    \\  scan             Scan a package against VirusTotal
     \\  env              Print the environment variables
     \\  shell-activate   Activate the shell environment
     \\  exec             Execute a command in the binget environment
@@ -70,11 +71,13 @@ const uninstall_help =
     \\Uninstall a package.
     \\
     \\Usage:
-    \\  binget uninstall <name>
+    \\  binget uninstall <name> [--yes]
     \\  binget uninstall -h | --help
     \\
     \\Options:
     \\  -h, --help       Show this help message and exit
+    \\  -y, --yes        Skip prompts for hooks
+    \\  -f, --force      Skip prompts for hooks
     \\
 ;
 
@@ -87,6 +90,21 @@ const upgrade_help =
     \\
     \\Options:
     \\  --global         Upgrade globally
+    \\  -h, --help       Show this help message and exit
+    \\
+;
+
+const scan_help =
+    \\Scan a package against VirusTotal.
+    \\
+    \\Usage:
+    \\  binget scan <name>[@version]
+    \\  binget scan -h | --help
+    \\
+    \\Environment Variables:
+    \\  VT_API_KEY       Your VirusTotal API key (required)
+    \\
+    \\Options:
     \\  -h, --help       Show this help message and exit
     \\
 ;
@@ -240,6 +258,14 @@ pub fn main() !void {
                 return;
             }
             const target = args[2];
+            var skip_prompts: bool = false;
+            if (args.len > 3) {
+                for (args[3..]) |arg| {
+                    if (std.mem.eql(u8, arg, "--yes") or std.mem.eql(u8, arg, "-y") or std.mem.eql(u8, arg, "--force") or std.mem.eql(u8, arg, "-f")) {
+                        skip_prompts = true;
+                    }
+                }
+            }
 
             const share_dir = try platform.getBingetShareDir(allocator);
             defer allocator.free(share_dir);
@@ -253,7 +279,7 @@ pub fn main() !void {
             var db_conn = try db.Database.open(db_path_z);
             defer db_conn.close();
 
-            try uninstall.uninstallPackage(allocator, db_conn, target);
+            try uninstall.uninstallPackage(allocator, db_conn, target, skip_prompts);
         } else if (std.mem.eql(u8, args[1], "upgrade")) {
             if (args.len > 2 and (std.mem.eql(u8, args[2], "-h") or std.mem.eql(u8, args[2], "--help"))) {
                 std.debug.print("{s}", .{upgrade_help});
@@ -265,8 +291,15 @@ pub fn main() !void {
             }
             const target = args[2];
             var global = false;
-            if (args.len > 3 and std.mem.eql(u8, args[3], "--global")) {
-                global = true;
+            var skip_prompts = false;
+            if (args.len > 3) {
+                for (args[3..]) |arg| {
+                    if (std.mem.eql(u8, arg, "--global")) {
+                        global = true;
+                    } else if (std.mem.eql(u8, arg, "--yes") or std.mem.eql(u8, arg, "-y") or std.mem.eql(u8, arg, "--force") or std.mem.eql(u8, arg, "-f")) {
+                        skip_prompts = true;
+                    }
+                }
             }
 
             const share_dir = try platform.getBingetShareDir(allocator);
@@ -281,7 +314,30 @@ pub fn main() !void {
             var db_conn = try db.Database.open(db_path_z);
             defer db_conn.close();
 
-            try upgrade.upgradePackage(allocator, db_conn, target, global);
+            try upgrade.upgradePackage(allocator, db_conn, target, global, skip_prompts);
+        } else if (std.mem.eql(u8, args[1], "scan")) {
+            if (args.len > 2 and (std.mem.eql(u8, args[2], "-h") or std.mem.eql(u8, args[2], "--help"))) {
+                std.debug.print("{s}", .{scan_help});
+                return;
+            }
+            if (args.len < 3) {
+                std.debug.print("{s}", .{scan_help});
+                return;
+            }
+            
+            const scan = @import("scan.zig");
+            const target = args[2];
+            
+            var id: []const u8 = target;
+            var version: ?[]const u8 = null;
+            if (std.mem.indexOf(u8, target, "@")) |idx| {
+                id = target[0..idx];
+                version = target[idx + 1 ..];
+            }
+            
+            scan.scanPackage(allocator, id, version) catch |err| {
+                std.debug.print("Failed to scan package: {}\n", .{err});
+            };
         } else if (std.mem.eql(u8, args[1], "env")) {
             if (args.len > 2 and (std.mem.eql(u8, args[2], "-h") or std.mem.eql(u8, args[2], "--help"))) {
                 std.debug.print("{s}", .{env_help});

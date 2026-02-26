@@ -14,6 +14,7 @@ pub fn parseAndRun(allocator: std.mem.Allocator, db_conn: db.Database, args: [][
     var config_path: ?[]const u8 = null;
     var target: ?[]const u8 = null;
     var mode: InstallMode = .user;
+    var skip_prompts: bool = false;
 
     var i: usize = 2; // args[0] is binget, args[1] is install
     while (i < args.len) {
@@ -24,6 +25,8 @@ pub fn parseAndRun(allocator: std.mem.Allocator, db_conn: db.Database, args: [][
             mode = .user;
         } else if (std.mem.eql(u8, arg, "--shim")) {
             mode = .shim;
+        } else if (std.mem.eql(u8, arg, "--yes") or std.mem.eql(u8, arg, "-y") or std.mem.eql(u8, arg, "--force") or std.mem.eql(u8, arg, "-f")) {
+            skip_prompts = true;
         } else if (std.mem.eql(u8, arg, "--config")) {
             i += 1;
             if (i < args.len) {
@@ -46,9 +49,9 @@ pub fn parseAndRun(allocator: std.mem.Allocator, db_conn: db.Database, args: [][
     }
 
     if (target) |t| {
-        try installTarget(allocator, db_conn, t, mode);
+        try installTarget(allocator, db_conn, t, mode, skip_prompts);
     } else {
-        try installFromConfig(allocator, db_conn, config_path);
+        try installFromConfig(allocator, db_conn, config_path, skip_prompts);
     }
 }
 
@@ -74,7 +77,7 @@ fn printHelp() void {
     std.debug.print("{s}", .{install_help});
 }
 
-pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target: []const u8, mode: InstallMode) !void {
+pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target: []const u8, mode: InstallMode, skip_prompts: bool) !void {
     const is_github_prefix = std.mem.startsWith(u8, target, "github.com/");
     var parts = std.mem.splitScalar(u8, target, '@');
     const name_part = parts.next().?;
@@ -99,12 +102,12 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
         if (builtin_runtimes.isBuiltin(id)) {
             try builtin_runtimes.install(allocator, db_conn, id, version_opt, mode);
         } else {
-            try core.installRegistryId(allocator, db_conn, id, version_opt, mode);
+            try core.installRegistryId(allocator, db_conn, id, version_opt, mode, skip_prompts);
         }
     }
 }
 
-pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, config_path_opt: ?[]const u8) !void {
+pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, config_path_opt: ?[]const u8, skip_prompts: bool) !void {
     var path_to_use = config_path_opt;
     
     var need_free = false;
@@ -135,7 +138,7 @@ pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, con
         const bf = try binget_file.parseBingetFile(allocator, content);
         // We will need to parse bf.bin_content
         if (bf.bin_content.len > 0) {
-            try parseAndInstallBinBlock(allocator, db_conn, bf.bin_content);
+            try parseAndInstallBinBlock(allocator, db_conn, bf.bin_content, skip_prompts);
         } else {
             std.debug.print("No 'bin:' block found in config.\n", .{});
         }
@@ -145,7 +148,7 @@ pub fn installFromConfig(allocator: std.mem.Allocator, db_conn: db.Database, con
     }
 }
 
-fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, bin_content: []const u8) !void {
+fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, bin_content: []const u8, skip_prompts: bool) !void {
     var lines = std.mem.splitScalar(u8, bin_content, '\n');
     while (lines.next()) |line| {
         const trimmed = std.mem.trim(u8, line, " \r\t");
@@ -170,7 +173,7 @@ fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, b
                 try target_buf.appendSlice(allocator, val_part);
                 
                 std.debug.print("Found dependency: {s}\n", .{target_buf.items});
-                installTarget(allocator, db_conn, target_buf.items, .shim) catch |err| {
+                installTarget(allocator, db_conn, target_buf.items, .shim, skip_prompts) catch |err| {
                     std.debug.print("Failed to install {s}: {}\n", .{target_buf.items, err});
                 };
                 continue;
@@ -181,7 +184,7 @@ fn parseAndInstallBinBlock(allocator: std.mem.Allocator, db_conn: db.Database, b
             // heuristic: if it looks like a package id
             if (std.mem.indexOfScalar(u8, id_part, '/') != null or std.mem.indexOfScalar(u8, id_part, '@') != null) {
                 std.debug.print("Found dependency: {s}\n", .{id_part});
-                installTarget(allocator, db_conn, id_part, .shim) catch |err| {
+                installTarget(allocator, db_conn, id_part, .shim, skip_prompts) catch |err| {
                     std.debug.print("Failed to install {s}: {}\n", .{id_part, err});
                 };
             }

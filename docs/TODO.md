@@ -85,6 +85,26 @@ Inspired by top scoop, choco, and brew packages.
 69. **psql** (PostgreSQL command-line client)
 70. **redis-cli** (Redis command-line interface)
 71. **lazysql** (Cross-platform TUI database management tool)
+72. **vscode** (Support OS package managers like apt/winget/brew and native installers for the `--global` switch)
+
+---
+
+## Pre/Post Install Scripts & User Hooks
+
+Allow users to run their own pre/post install, pre/post uninstall, and pre/post upgrade scripts to customize their environments.
+
+* **Script Locations**: 
+  * `~/.local/share/binget/usr/<pkg>/`
+  * `~/.local/share/binget/usr/<pkg>/<ver>/`
+* **Supported Extensions**: `install.sh`, `install.ps1`, `install.ts`
+* **Auto-Runtimes**: Automatically install `deno` or `pwsh` (via `binget`) if scripts with `.ts` or `.ps1` extensions are found and the runtime is missing.
+* **Windows Support**: 
+  * Automatically install `git` (Git for Windows) to acquire and call `bash` for `.sh` scripts.
+  * Prefer tools in this order: `install.ts` > `install.ps1` > `install.sh`.
+* **Linux/macOS Support**: 
+  * Prefer tools in this order: `install.sh` > `install.ps1` > `install.ts`.
+* **TODO**: Store a global and user config for installer preferences (e.g., allow the user to control the preference order of installer script extensions).
+* **TODO**: Prompt the user before running any scripts (whether they are bundled in the package manifest or provided as user hooks). Require `--yes --force` or `-y -f` flags to skip this prompt during installation/uninstallation.
 
 ---
 
@@ -129,3 +149,8 @@ Many GUI Linux apps are now distributed primarily via Flatpak.
   * Manifests define the application ID (e.g., `org.mozilla.firefox`) and the remote (usually `flathub`).
   * `binget` executes: `flatpak install --user --noninteractive flathub <app_id>`.
   * `binget` can track these via its own SQLite DB for unified uninstalls/updates while letting Flatpak handle the heavy lifting of containerization.
+
+## Automated E2E Testing Pipeline
+* **Weekly CI/CD Schedule**: Create a scheduled GitHub Actions workflow (runs once a week) that uses containers to execute heavy install, upgrade, and removal tests across macOS, Windows, and Linux.
+* **Packer & KVM Automation**: Automate KVM with Packer to create reproducible Windows and Linux images for testing. 
+* **Deno / JRI Integration**: Use Deno and `@frostyeti/jri` (or similar) to automate the Packer/KVM image lifecycle and test execution as needed.
