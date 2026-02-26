@@ -17,7 +17,12 @@ pub const VersionsFile = struct {
     versions: []VersionInfo,
 };
 
-const BINGET_PKGS_URL = "https://raw.githubusercontent.com/frostyeti/binget-pkgs/dev";
+fn getRegistryUrl() []const u8 {
+    if (std.posix.getenv("BINGET_REGISTRY_URL")) |url| {
+        return url;
+    }
+    return "https://raw.githubusercontent.com/frostyeti/binget-pkgs/dev";
+}
 
 fn getFirstChar(id: []const u8) u8 {
     return std.ascii.toLower(id[0]);
@@ -28,7 +33,7 @@ pub fn fetchVersions(allocator: std.mem.Allocator, id: []const u8) !VersionsFile
     defer client.deinit();
 
     const char = getFirstChar(id);
-    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/versions.json", .{ BINGET_PKGS_URL, char, id });
+    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/versions.json", .{ getRegistryUrl(), char, id });
     defer allocator.free(url);
 
     const uri = try std.Uri.parse(url);
@@ -248,7 +253,7 @@ pub fn fetchPlatformManifest(allocator: std.mem.Allocator, id: []const u8, versi
     defer client.deinit();
 
     const char = getFirstChar(id);
-    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/{s}/manifest.{s}.json", .{ BINGET_PKGS_URL, char, id, version, platform });
+    const url = try std.fmt.allocPrint(allocator, "{s}/{c}/{s}/{s}/manifest.{s}.json", .{ getRegistryUrl(), char, id, version, platform });
     defer allocator.free(url);
 
     const uri = try std.Uri.parse(url);
