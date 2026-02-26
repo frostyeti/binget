@@ -10,7 +10,7 @@ BIN_DIR="$HOME/.local/bin"
 VERSION="${1:-latest}"
 
 if [ "$VERSION" = "latest" ]; then
-    VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
+    VERSION=$(curl -s "https://api.github.com/repos/${REPO}/releases" | grep '"tag_name":' | head -n 1 | sed -E 's/.*"([^"]+)".*/\1/' | sed 's/^v//')
     if [ -z "$VERSION" ]; then
         echo "Failed to fetch latest version."
         exit 1
