@@ -3,6 +3,7 @@
 ## ✅ Always DO
 
 - When you start a session read `mise.toml` or `build.zig` files to know which apps, runtimes and tools should be used.
+- When writing Python scripts, ensure they are cross-platform (Linux, macOS, Windows) and use `uv` to run them. Add `uv` to `mise.toml`.
 - Write tests for any code changes if they do not exist.
 - Run tests before completing the task using `zig build test`.
 - Fix any broken tests.

@@ -1,0 +1,23 @@
+name: Update Registry Packages
+
+on:
+  schedule:
+    # Run every day at 00:00 UTC
+    - cron: '0 0 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  update-pkgs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Run Update Script
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }} # Use a PAT to allow pushing to another repo
+          CI: true
+        run: uv run eng/scripts/update_pkgs.py
