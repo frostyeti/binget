@@ -229,13 +229,13 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     const arch_tag = @tagName(builtin.cpu.arch);
     
     // Map zig standard names to our manifest nomenclature
-    var os_str: []const u8 = os_tag;
-    if (std.mem.eql(u8, os_tag, "macos")) os_str = "darwin";
+    const os_str: []const u8 = os_tag;
+    // We used to map macos to darwin, but binget-pkgs uses macos
     
-    var arch_str: []const u8 = arch_tag;
-    if (std.mem.eql(u8, arch_tag, "x86_64")) arch_str = "amd64";
+    const arch_str: []const u8 = arch_tag;
+    // We used to map x86_64 to amd64, but binget-pkgs uses x86_64
 
-    const platform_id = try std.fmt.allocPrint(allocator, "{s}.{s}", .{os_str, arch_str});
+    const platform_id = try std.fmt.allocPrint(allocator, "{s}-{s}", .{os_str, arch_str});
     defer allocator.free(platform_id);
     
     std.debug.print("Fetching install manifest for {s}...\n", .{platform_id});

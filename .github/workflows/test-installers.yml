@@ -18,13 +18,12 @@ jobs:
       - name: Checkout binget
         uses: actions/checkout@v4
 
-      - name: Setup Zig
-        uses: mlugg/setup-zig@v1
-        with:
-          version: master
+      - name: Setup mise
+        uses: jdx/mise-action@v2
 
       - name: Build binget
-        run: zig build
+        shell: bash
+        run: mise run build
 
       - name: Initialize registry
         shell: bash
