@@ -1,0 +1,75 @@
+name: Weekly E2E Tests (Packer + KVM)
+
+on:
+  schedule:
+    - cron: '0 0 * * 0' # Run weekly on Sunday at midnight
+  workflow_dispatch: # Allow manual triggers
+
+jobs:
+  e2e-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Install KVM/QEMU dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-kvm libvirt-daemon-system libvirt-clients bridge-utils virtinst
+          sudo adduser $USER kvm
+          sudo adduser $USER libvirt
+
+      - name: Run E2E Tests
+        run: |
+          # This assumes eng/e2e/run_tests.ts orchestrates packer and testing
+          deno run -A eng/e2e/run_tests.ts --os linux
+
+  e2e-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Run E2E Tests
+        run: |
+          deno run -A eng/e2e/run_tests.ts --os windows
+
+  e2e-macos:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Setup Packer
+        uses: hashicorp/setup-packer@main
+        with:
+          version: latest
+
+      - name: Run E2E Tests
+        run: |
+          deno run -A eng/e2e/run_tests.ts --os macos

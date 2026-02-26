@@ -33,12 +33,17 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []c
     std.debug.print("Downloaded {} bytes.\n", .{downloaded_size});
 }
 
-pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, out_dir_path: []const u8, original_url: []const u8) !void {
+pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, out_dir_path: []const u8, original_url: []const u8, format: ?[]const u8) !void {
     try std.fs.cwd().makePath(out_dir_path);
 
+    const is_msi = if (format) |f| std.mem.eql(u8, f, "msi") else std.ascii.endsWithIgnoreCase(original_url, ".msi");
+    const is_inno = if (format) |f| std.mem.eql(u8, f, "inno") else false;
+    const is_squirrel = if (format) |f| std.mem.eql(u8, f, "squirrel") else false;
+
+    const builtin = @import("builtin");
+
     // Handle MSI explicitly via msiexec
-    if (std.ascii.endsWithIgnoreCase(original_url, ".msi")) {
-        const builtin = @import("builtin");
+    if (is_msi) {
         if (builtin.os.tag != .windows) {
             std.debug.print("Cannot extract MSI on non-Windows platform.\n", .{});
             return error.UnsupportedPlatform;
@@ -70,6 +75,63 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
                 return;
             },
             else => return error.ExtractFailed,
+        }
+    }
+
+    if (is_inno) {
+        if (builtin.os.tag != .windows) {
+            std.debug.print("Cannot extract Inno Setup on non-Windows platform natively.\n", .{});
+            return error.UnsupportedPlatform;
+        }
+
+        const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
+        defer allocator.free(abs_archive);
+        const abs_out = try std.fs.cwd().realpathAlloc(allocator, out_dir_path);
+        defer allocator.free(abs_out);
+
+        const dir_arg = try std.fmt.allocPrint(allocator, "/DIR={s}", .{abs_out});
+        defer allocator.free(dir_arg);
+
+        const argv = &[_][]const u8{ abs_archive, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", dir_arg };
+        
+        std.debug.print("Extracting Inno Setup locally...\n", .{});
+        var child = std.process.Child.init(argv, allocator);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Inherit;
+        
+        const term = try child.spawnAndWait();
+        switch (term) {
+            .Exited => |code| {
+                if (code != 0) {
+                    std.debug.print("Inno Setup exited with code {}\n", .{code});
+                    return error.ExtractFailed;
+                }
+                return;
+            },
+            else => return error.ExtractFailed,
+        }
+    }
+
+    if (is_squirrel) {
+        if (builtin.os.tag != .windows) {
+            std.debug.print("Cannot extract Squirrel Setup on non-Windows platform.\n", .{});
+            return error.UnsupportedPlatform;
+        }
+
+        const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
+        defer allocator.free(abs_archive);
+
+        // Squirrel installers bundle a nupkg inside. 
+        // We can just execute the squirrel Setup.exe with --silent, but it installs to LocalAppData.
+        // If we want a portable zip extraction, we can rename the exe to .zip and try to unzip.
+        // Actually, some Squirrel setup files are just .zip files with a PE header.
+        // Let's try native zig zip extraction first, if it fails we might need to fallback.
+        std.debug.print("Attempting to unzip Squirrel Installer...\n", .{});
+        if (try extractNative(allocator, archive_path, out_dir_path, ".zip")) {
+            return;
+        } else {
+            std.debug.print("Failed to unzip Squirrel installer natively.\n", .{});
+            return error.ExtractFailed;
         }
     }
 

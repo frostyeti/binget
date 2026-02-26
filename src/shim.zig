@@ -85,7 +85,7 @@ fn ensureWindowsShimExists(allocator: std.mem.Allocator) ![]const u8 {
         defer allocator.free(tmp_extract);
         std.fs.cwd().deleteTree(tmp_extract) catch {};
         
-        try archive.extractArchive(allocator, tmp_zip, tmp_extract, url);
+        try archive.extractArchive(allocator, tmp_zip, tmp_extract, url, null);
         
         const extracted_shim = try std.fs.path.join(allocator, &.{ tmp_extract, "shim.exe" });
         defer allocator.free(extracted_shim);

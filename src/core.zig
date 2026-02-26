@@ -86,7 +86,7 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
 
     const extract_dir = try std.fs.path.join(allocator, &.{ tmp_dir_path, "extracted" });
     defer allocator.free(extract_dir);
-    try archive.extractArchive(allocator, archive_path, extract_dir, url);
+    try archive.extractArchive(allocator, archive_path, extract_dir, url, null);
 
     const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", repo, release.tag_name });
     defer allocator.free(pkg_dir);
@@ -289,6 +289,8 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     if (std.mem.eql(u8, config.type, "raw")) {
         try executeRawInstall(allocator, db_conn, id, version_to_install, config, final_mode);
+    } else if (std.mem.eql(u8, config.type, "appimage")) {
+        try executeAppImageInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "runtime")) {
         try executeRuntimeInstall(allocator, db_conn, id, version_to_install, config, final_mode);
     } else if (std.mem.eql(u8, config.type, "archive")) {
@@ -302,13 +304,14 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
         std.debug.print("Proxying installation to flatpak...\n", .{});
         const app_id = config.package orelse return error.MissingPackageForFlatpak;
         
-        var argv = try allocator.alloc([]const u8, 5);
+        var argv = try allocator.alloc([]const u8, 6);
         defer allocator.free(argv);
         argv[0] = "flatpak";
         argv[1] = "install";
         argv[2] = if (final_mode == .global) "--system" else "--user";
         argv[3] = "--noninteractive";
-        argv[4] = app_id;
+        argv[4] = "flathub";
+        argv[5] = app_id;
         
         var child = std.process.Child.init(argv, allocator);
         child.stdout_behavior = .Inherit;
@@ -421,25 +424,95 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     var args = std.ArrayList([]const u8).empty;
     defer args.deinit(allocator);
 
+    var needs_uac = false;
     const builtin = @import("builtin");
 
-    if (std.mem.eql(u8, format, "msi") and builtin.os.tag == .windows) {
-        try args.append("msiexec.exe");
-        try args.append("/i");
-        try args.append(download_path);
-        
-        if (config.silent_args) |sargs| {
-            for (sargs) |arg| {
-                try args.append(arg);
+    if (builtin.os.tag == .windows) {
+        if (!platform.isAdmin() and mode == .global) {
+            std.debug.print("⚠️  Global installation requested without Administrator privileges. Will prompt for UAC.\n", .{});
+            needs_uac = true;
+        }
+
+        var exe_path: []const u8 = undefined;
+        var args_str = std.ArrayList(u8).empty;
+        defer args_str.deinit(allocator);
+
+        if (std.mem.eql(u8, format, "msi")) {
+            exe_path = "msiexec.exe";
+            try args_str.writer(allocator).print("'/i', '\"{s}\"'", .{download_path});
+            if (config.silent_args) |sargs| {
+                for (sargs) |arg| {
+                    try args_str.writer(allocator).print(", '{s}'", .{arg});
+                }
+            } else {
+                try args_str.writer(allocator).print(", '/qb'", .{}); // Default silentish MSI arg
+            }
+        } else if (std.mem.eql(u8, format, "exe") or std.mem.eql(u8, format, "inno") or std.mem.eql(u8, format, "squirrel")) {
+            exe_path = download_path;
+            if (config.silent_args) |sargs| {
+                for (sargs, 0..) |arg, i| {
+                    if (i > 0) try args_str.writer(allocator).print(", ", .{});
+                    try args_str.writer(allocator).print("'{s}'", .{arg});
+                }
+            } else if (std.mem.eql(u8, format, "inno")) {
+                try args_str.writer(allocator).print("'/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'", .{});
+            } else if (std.mem.eql(u8, format, "squirrel")) {
+                try args_str.writer(allocator).print("'--silent'", .{});
             }
         } else {
-            try args.append("/qb"); // Default silentish MSI arg
+            std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
+            std.debug.print("Automatic execution is not fully supported for this format ({s}) on this OS.\n", .{format});
+            std.debug.print("To install '{s}', please run the following downloaded file manually:\n", .{id});
+            std.debug.print("-> {s}\n", .{download_path});
+            if (config.silent_args) |sargs| {
+                std.debug.print("Recommended silent arguments: ", .{});
+                for (sargs) |arg| {
+                    std.debug.print("{s} ", .{arg});
+                }
+                std.debug.print("\n", .{});
+            }
+            std.debug.print("==============================\n\n", .{});
+            return;
         }
-    } else if (std.mem.eql(u8, format, "exe") and builtin.os.tag == .windows) {
-        try args.append(download_path);
-        if (config.silent_args) |sargs| {
-            for (sargs) |arg| {
-                try args.append(arg);
+
+        if (needs_uac) {
+            try args.append(allocator, "powershell");
+            try args.append(allocator, "-NoProfile");
+            try args.append(allocator, "-Command");
+            
+            var ps_cmd = std.ArrayList(u8).empty;
+            defer ps_cmd.deinit(allocator);
+            if (args_str.items.len > 0) {
+                try ps_cmd.writer(allocator).print("Start-Process '{s}' -ArgumentList {s} -Wait -Verb RunAs", .{exe_path, args_str.items});
+            } else {
+                try ps_cmd.writer(allocator).print("Start-Process '{s}' -Wait -Verb RunAs", .{exe_path});
+            }
+            try args.append(allocator, try ps_cmd.toOwnedSlice(allocator));
+        } else {
+            if (std.mem.eql(u8, format, "msi")) {
+                try args.append(allocator, "msiexec.exe");
+                try args.append(allocator, "/i");
+                try args.append(allocator, download_path);
+                if (config.silent_args) |sargs| {
+                    for (sargs) |arg| {
+                        try args.append(allocator, arg);
+                    }
+                } else {
+                    try args.append(allocator, "/qb");
+                }
+            } else {
+                try args.append(allocator, download_path);
+                if (config.silent_args) |sargs| {
+                    for (sargs) |arg| {
+                        try args.append(allocator, arg);
+                    }
+                } else if (std.mem.eql(u8, format, "inno")) {
+                    try args.append(allocator, "/VERYSILENT");
+                    try args.append(allocator, "/SUPPRESSMSGBOXES");
+                    try args.append(allocator, "/NORESTART");
+                } else if (std.mem.eql(u8, format, "squirrel")) {
+                    try args.append(allocator, "--silent");
+                }
             }
         }
     } else {
@@ -479,6 +552,60 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
             std.debug.print("Installer failed to complete.\n", .{});
             return error.InstallFailed;
         }
+    }
+}
+
+fn executeAppImageInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
+    // Treat an AppImage essentially like a raw binary install but with potential desktop integration
+    try executeRawInstall(allocator, db_conn, id, version, config, mode);
+
+    if (config.bin == null or config.bin.?.len == 0) return;
+    
+    // Attempt to extract .desktop and icons if on Linux
+    const builtin = @import("builtin");
+    if (builtin.os.tag != .linux) return;
+
+    std.debug.print("Extracting AppImage desktop integration files...\n", .{});
+    
+    const bin_name = config.bin.?[0];
+    const dest_bin_name = std.fs.path.basename(bin_name);
+    
+    const share_dir = try platform.getBingetShareDir(allocator);
+    defer allocator.free(share_dir);
+    
+    const pkg_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
+    defer allocator.free(pkg_dir);
+    
+    const target_exe = try std.fs.path.join(allocator, &.{ pkg_dir, dest_bin_name });
+    defer allocator.free(target_exe);
+
+    // Run the appimage with --appimage-extract
+    var argv = try allocator.alloc([]const u8, 2);
+    defer allocator.free(argv);
+    argv[0] = target_exe;
+    argv[1] = "--appimage-extract";
+
+    var child = std.process.Child.init(argv, allocator);
+    child.cwd = pkg_dir;
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    
+    const term = child.spawnAndWait() catch |err| {
+        std.debug.print("Warning: Failed to extract AppImage desktop files: {}\n", .{err});
+        return;
+    };
+    
+    switch (term) {
+        .Exited => |code| {
+            if (code == 0) {
+                std.debug.print("AppImage contents extracted to {s}/squashfs-root\n", .{pkg_dir});
+                // Note: full integration (copying .desktop to ~/.local/share/applications) 
+                // could be expanded here. For now we leave it extracted for shims/hooks.
+            } else {
+                std.debug.print("Warning: AppImage extraction exited with code {}\n", .{code});
+            }
+        },
+        else => std.debug.print("Warning: AppImage extraction failed to complete.\n", .{}),
     }
 }
 
@@ -579,7 +706,7 @@ fn executeArchiveInstall(allocator: std.mem.Allocator, db_conn: db.Database, id:
     const extract_dir = pkg_dir;
     
     std.debug.print("Extracting to {s}...\n", .{extract_dir});
-    try archive.extractArchive(allocator, archive_path, extract_dir, url);
+    try archive.extractArchive(allocator, archive_path, extract_dir, url, config.format);
 
     const shim = @import("shim.zig");
 
@@ -662,7 +789,7 @@ pub fn executeRuntimeInstall(allocator: std.mem.Allocator, db_conn: db.Database,
     defer allocator.free(extract_dir);
     
     std.debug.print("Extracting...\n", .{});
-    try archive.extractArchive(allocator, archive_path, extract_dir, url);
+    try archive.extractArchive(allocator, archive_path, extract_dir, url, config.format);
 
     // For a runtime, we move the ENTIRE extracted dir to packages/<id>/<version>
     const package_dir = try std.fs.path.join(allocator, &.{ share_dir, "packages", id, version });
@@ -802,7 +929,7 @@ fn executeBuildInstall(allocator: std.mem.Allocator, db_conn: db.Database, id: [
     try std.fs.cwd().makePath(extract_path);
 
     std.debug.print("Extracting source...\n", .{});
-    try archive.extractArchive(allocator, archive_path, extract_path, url);
+    try archive.extractArchive(allocator, archive_path, extract_path, url, null);
 
     // Resolve where the build should actually happen (maybe a sub-directory in the tarball)
     var build_dir = try allocator.dupe(u8, extract_path);

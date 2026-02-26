@@ -14,12 +14,14 @@ builds:
       - x86_64-macos-none
 
 archives:
-  - format: tar.gz
+  - formats:
+      - tar.gz
     name_template: >-
       {{ .ProjectName }}-{{ lower .Os }}-{{ if eq .Arch "amd64" }}x86_64{{ else if eq .Arch "arm64" }}aarch64{{ else }}{{ lower .Arch }}{{ end }}-v{{ .Version }}
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
 
 nfpms:
   - formats:
@@ -29,32 +31,6 @@ nfpms:
     maintainer: "Binget Authors <email@example.com>"
     description: "Binget package manager"
     bindir: /usr/bin
-
-brews:
-  - repository:
-      owner: binget-org
-      name: homebrew-tap
-    directory: Formula
-    commit_author:
-      name: binget-bot
-      email: bot@example.com
-
-scoops:
-  - repository:
-      owner: binget-org
-      name: scoop-bucket
-    directory: bucket
-    commit_author:
-      name: binget-bot
-      email: bot@example.com
-
-chocolateys:
-  - name: binget
-    title: binget
-    authors: binget
-    project_url: https://github.com/binget-org/binget
-    description: A cross-platform package manager
-    skip_publish: true
 
 changelog:
   sort: asc
