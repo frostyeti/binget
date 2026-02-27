@@ -390,7 +390,7 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
             },
             else => return error.InstallFailed,
         }
-    } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew")) {
+    } else if (std.mem.eql(u8, config.type, "apt") or std.mem.eql(u8, config.type, "winget") or std.mem.eql(u8, config.type, "choco") or std.mem.eql(u8, config.type, "brew") or std.mem.eql(u8, config.type, "pacman") or std.mem.eql(u8, config.type, "aur") or std.mem.eql(u8, config.type, "rpm")) {
         std.debug.print("Proxying installation to system package manager ({s})...\n", .{config.type});
 
         const pkg_name = if (config.package) |p| p else id;
@@ -402,6 +402,22 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
             argv[1] = "apt-get";
             argv[2] = "install";
             argv[3] = "-y";
+        } else if (std.mem.eql(u8, config.type, "pacman")) {
+            argv = try allocator.alloc([]const u8, 4);
+            argv[0] = "sudo";
+            argv[1] = "pacman";
+            argv[2] = "-S";
+            argv[3] = "--noconfirm";
+        } else if (std.mem.eql(u8, config.type, "aur")) {
+            argv = try allocator.alloc([]const u8, 3);
+            argv[0] = "yay";
+            argv[1] = "-S";
+            argv[2] = "--noconfirm";
+        } else if (std.mem.eql(u8, config.type, "rpm")) {
+            argv = try allocator.alloc([]const u8, 3);
+            argv[0] = "sudo";
+            argv[1] = "rpm";
+            argv[2] = "-i";
         } else if (std.mem.eql(u8, config.type, "brew")) {
             argv = try allocator.alloc([]const u8, 2);
             argv[0] = "brew";

@@ -39,8 +39,70 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
     const is_msi = if (format) |f| std.mem.eql(u8, f, "msi") else std.ascii.endsWithIgnoreCase(original_url, ".msi");
     const is_inno = if (format) |f| std.mem.eql(u8, f, "inno") else false;
     const is_squirrel = if (format) |f| std.mem.eql(u8, f, "squirrel") else false;
+    const is_dmg = if (format) |f| std.mem.eql(u8, f, "dmg") else std.ascii.endsWithIgnoreCase(original_url, ".dmg");
 
     const builtin = @import("builtin");
+
+    if (is_dmg) {
+        if (builtin.os.tag != .macos) {
+            std.debug.print("Cannot extract DMG on non-macOS platform.\n", .{});
+            return error.UnsupportedPlatform;
+        }
+
+        const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
+        defer allocator.free(abs_archive);
+        const abs_out = try std.fs.cwd().realpathAlloc(allocator, out_dir_path);
+        defer allocator.free(abs_out);
+
+        std.debug.print("Mounting DMG and extracting contents...\n", .{});
+
+        // Use hdiutil attach -nobrowse -noverify -mountrandom <temp_dir> <dmg>
+        const mount_dir = try std.fmt.allocPrint(allocator, "{s}_mount", .{abs_out});
+        defer allocator.free(mount_dir);
+        std.fs.cwd().makePath(mount_dir) catch {};
+        // Note: we can't defer deleteTree here because we need to unmount first.
+        // We will do it explicitly after unmounting.
+
+        const mount_argv = &[_][]const u8{ "hdiutil", "attach", "-nobrowse", "-noverify", "-mountpoint", mount_dir, abs_archive };
+        var mount_child = std.process.Child.init(mount_argv, allocator);
+        mount_child.stdout_behavior = .Ignore;
+        mount_child.stderr_behavior = .Inherit;
+
+        const mount_term = try mount_child.spawnAndWait();
+        switch (mount_term) {
+            .Exited => |code| {
+                if (code != 0) return error.ExtractFailed;
+            },
+            else => return error.ExtractFailed,
+        }
+
+        // Copy contents using ditto or cp
+        // ditto will copy everything inside mount_dir to abs_out
+        const copy_argv = &[_][]const u8{ "ditto", mount_dir, abs_out };
+        var copy_child = std.process.Child.init(copy_argv, allocator);
+        copy_child.stdout_behavior = .Ignore;
+        copy_child.stderr_behavior = .Inherit;
+
+        const copy_term = try copy_child.spawnAndWait();
+
+        // Always unmount before returning
+        const unmount_argv = &[_][]const u8{ "hdiutil", "detach", mount_dir, "-force" };
+        var unmount_child = std.process.Child.init(unmount_argv, allocator);
+        unmount_child.stdout_behavior = .Ignore;
+        unmount_child.stderr_behavior = .Ignore;
+        _ = unmount_child.spawnAndWait() catch {};
+
+        std.fs.cwd().deleteTree(mount_dir) catch {};
+
+        switch (copy_term) {
+            .Exited => |code| {
+                if (code != 0) return error.ExtractFailed;
+            },
+            else => return error.ExtractFailed,
+        }
+
+        return;
+    }
 
     // Handle MSI explicitly via msiexec
     if (is_msi) {
@@ -206,7 +268,10 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
 pub fn makeExecutable(path: []const u8) !void {
     const builtin = @import("builtin");
     if (builtin.os.tag != .windows) {
-        var file = try std.fs.cwd().openFile(path, .{ .mode = .read_write });
+        var file = std.fs.cwd().openFile(path, .{ .mode = .read_write }) catch |err| {
+            if (err == error.IsDir) return;
+            return err;
+        };
         defer file.close();
         const stat = try file.stat();
         try file.chmod(stat.mode | 0o111);
