@@ -178,6 +178,16 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
             \\  return $exit_code
             \\}
             \\
+            \\binget_reset_path() {
+            \\  if [ -n "$BINGET_OG_PATH" ]; then
+            \\    export PATH="$BINGET_OG_PATH"
+            \\  fi
+            \\}
+            \\
+            \\if [ -z "$BINGET_OG_PATH" ]; then
+            \\  export BINGET_OG_PATH="$PATH"
+            \\fi
+            \\
             \\_binget_hook() {
             \\  local exit_code=$?
             \\  eval "$(command binget shell compute bash)"
@@ -203,6 +213,16 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
             \\  return $exit_code
             \\}
             \\
+            \\binget_reset_path() {
+            \\  if [ -n "$BINGET_OG_PATH" ]; then
+            \\    export PATH="$BINGET_OG_PATH"
+            \\  fi
+            \\}
+            \\
+            \\if [ -z "$BINGET_OG_PATH" ]; then
+            \\  export BINGET_OG_PATH="$PATH"
+            \\fi
+            \\
             \\_binget_hook() {
             \\  eval "$(command binget shell compute zsh)"
             \\}
@@ -222,6 +242,16 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
             \\    command binget shell compute fish | source
             \\  end
             \\  return $exit_code
+            \\end
+            \\
+            \\function binget_reset_path
+            \\  if set -q BINGET_OG_PATH
+            \\    set -gx PATH $BINGET_OG_PATH
+            \\  end
+            \\end
+            \\
+            \\if not set -q BINGET_OG_PATH
+            \\  set -gx BINGET_OG_PATH $PATH
             \\end
             \\
             \\function _binget_hook --on-variable PWD --description 'binget env activate'
@@ -245,6 +275,16 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
             \\  return $exit_code
             \\}
             \\
+            \\binget_reset_path() {
+            \\  if [ -n "$BINGET_OG_PATH" ]; then
+            \\    export PATH="$BINGET_OG_PATH"
+            \\  fi
+            \\}
+            \\
+            \\if [ -z "$BINGET_OG_PATH" ]; then
+            \\  export BINGET_OG_PATH="$PATH"
+            \\fi
+            \\
             \\cd() {
             \\  command cd "$@"
             \\  exit_code=$?
@@ -267,6 +307,16 @@ pub fn shellActivate(allocator: std.mem.Allocator, shell_name: []const u8) !void
             \\    Invoke-Expression (& binget.exe shell compute pwsh | Out-String)
             \\  }
             \\  return $exit_code
+            \\}
+            \\
+            \\function binget_reset_path {
+            \\  if ($env:BINGET_OG_PATH) {
+            \\    $env:PATH = $env:BINGET_OG_PATH
+            \\  }
+            \\}
+            \\
+            \\if (-not $env:BINGET_OG_PATH) {
+            \\  $env:BINGET_OG_PATH = $env:PATH
             \\}
             \\
         ) catch {};
