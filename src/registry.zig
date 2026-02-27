@@ -163,6 +163,7 @@ pub const Link = struct {
 };
 
 pub const InstallModeConfig = struct {
+    name: ?[]const u8 = null,
     type: []const u8,
     format: ?[]const u8 = null,
     url: ?[]const u8 = null,
@@ -180,19 +181,35 @@ pub const InstallModeConfig = struct {
 
 pub const PlatformManifest = struct {
     install_modes: struct {
-        shim: ?InstallModeConfig = null,
-        user: ?InstallModeConfig = null,
-        global: ?InstallModeConfig = null,
+        shim: ?[]InstallModeConfig = null,
+        user: ?[]InstallModeConfig = null,
+        global: ?[]InstallModeConfig = null,
     },
 };
 
-fn parseInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value) !InstallModeConfig {
+fn parseInstallModeConfigs(allocator: std.mem.Allocator, mode_val: std.json.Value) ![]InstallModeConfig {
+    if (mode_val == .array) {
+        const arr = mode_val.array;
+        var configs = try allocator.alloc(InstallModeConfig, arr.items.len);
+        for (arr.items, 0..) |item, i| {
+            configs[i] = try parseSingleInstallModeConfig(allocator, item);
+        }
+        return configs;
+    } else {
+        var configs = try allocator.alloc(InstallModeConfig, 1);
+        configs[0] = try parseSingleInstallModeConfig(allocator, mode_val);
+        return configs;
+    }
+}
+
+fn parseSingleInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json.Value) !InstallModeConfig {
     const obj = mode_val.object;
 
     var config = InstallModeConfig{
         .type = try allocator.dupe(u8, obj.get("type").?.string),
     };
 
+    if (obj.get("name")) |v| config.name = try allocator.dupe(u8, v.string);
     if (obj.get("format")) |v| config.format = try allocator.dupe(u8, v.string);
     if (obj.get("url")) |v| config.url = try allocator.dupe(u8, v.string);
     if (obj.get("checksum")) |v| config.checksum = try allocator.dupe(u8, v.string);
@@ -314,64 +331,68 @@ pub fn fetchPlatformManifest(allocator: std.mem.Allocator, id: []const u8, versi
 
     var manifest = PlatformManifest{ .install_modes = .{} };
 
-    if (modes_obj.get("shim")) |v| manifest.install_modes.shim = try parseInstallModeConfig(allocator, v);
-    if (modes_obj.get("user")) |v| manifest.install_modes.user = try parseInstallModeConfig(allocator, v);
-    if (modes_obj.get("global")) |v| manifest.install_modes.global = try parseInstallModeConfig(allocator, v);
+    if (modes_obj.get("shim")) |v| manifest.install_modes.shim = try parseInstallModeConfigs(allocator, v);
+    if (modes_obj.get("user")) |v| manifest.install_modes.user = try parseInstallModeConfigs(allocator, v);
+    if (modes_obj.get("global")) |v| manifest.install_modes.global = try parseInstallModeConfigs(allocator, v);
 
     return manifest;
 }
 
 pub fn freePlatformManifest(allocator: std.mem.Allocator, pm: PlatformManifest) void {
     const modes = pm.install_modes;
-    if (modes.shim) |m| freeInstallModeConfig(allocator, m);
-    if (modes.user) |m| freeInstallModeConfig(allocator, m);
-    if (modes.global) |m| freeInstallModeConfig(allocator, m);
+    if (modes.shim) |m| freeInstallModeConfigs(allocator, m);
+    if (modes.user) |m| freeInstallModeConfigs(allocator, m);
+    if (modes.global) |m| freeInstallModeConfigs(allocator, m);
 }
 
-fn freeInstallModeConfig(allocator: std.mem.Allocator, m: InstallModeConfig) void {
-    allocator.free(m.type);
-    if (m.format) |v| allocator.free(v);
-    if (m.url) |v| allocator.free(v);
-    if (m.checksum) |v| allocator.free(v);
-    if (m.extract_dir) |v| allocator.free(v);
-    if (m.package) |v| allocator.free(v);
-    if (m.bin) |bins| {
-        for (bins) |b| allocator.free(b);
-        allocator.free(bins);
-    }
-    if (m.registry_keys) |keys| {
-        for (keys) |k| {
-            allocator.free(k.path);
-            if (k.name) |n| allocator.free(n);
-            if (k.type) |t| allocator.free(t);
-            if (k.value) |v| allocator.free(v);
+fn freeInstallModeConfigs(allocator: std.mem.Allocator, configs: []InstallModeConfig) void {
+    for (configs) |m| {
+        if (m.name) |v| allocator.free(v);
+        allocator.free(m.type);
+        if (m.format) |v| allocator.free(v);
+        if (m.url) |v| allocator.free(v);
+        if (m.checksum) |v| allocator.free(v);
+        if (m.extract_dir) |v| allocator.free(v);
+        if (m.package) |v| allocator.free(v);
+        if (m.bin) |bins| {
+            for (bins) |b| allocator.free(b);
+            allocator.free(bins);
         }
-        allocator.free(keys);
-    }
-    if (m.shortcuts) |shortcuts| {
-        for (shortcuts) |s| {
-            allocator.free(s.name);
-            allocator.free(s.target);
-            allocator.free(s.location);
-            if (s.icon) |ic| allocator.free(ic);
+        if (m.registry_keys) |keys| {
+            for (keys) |k| {
+                allocator.free(k.path);
+                if (k.name) |n| allocator.free(n);
+                if (k.type) |t| allocator.free(t);
+                if (k.value) |val| allocator.free(val);
+            }
+            allocator.free(keys);
         }
-        allocator.free(shortcuts);
-    }
-    if (m.links) |links| {
-        for (links) |l| {
-            allocator.free(l.target);
-            allocator.free(l.link);
-            allocator.free(l.type);
+        if (m.shortcuts) |shortcuts| {
+            for (shortcuts) |s| {
+                allocator.free(s.name);
+                allocator.free(s.target);
+                allocator.free(s.location);
+                if (s.icon) |ic| allocator.free(ic);
+            }
+            allocator.free(shortcuts);
         }
-        allocator.free(links);
+        if (m.links) |links| {
+            for (links) |l| {
+                allocator.free(l.target);
+                allocator.free(l.link);
+                allocator.free(l.type);
+            }
+            allocator.free(links);
+        }
+        if (m.build_engine) |v| allocator.free(v);
+        if (m.build_args) |args| {
+            for (args) |a| allocator.free(a);
+            allocator.free(args);
+        }
+        if (m.silent_args) |args| {
+            for (args) |a| allocator.free(a);
+            allocator.free(args);
+        }
     }
-    if (m.build_engine) |v| allocator.free(v);
-    if (m.build_args) |args| {
-        for (args) |a| allocator.free(a);
-        allocator.free(args);
-    }
-    if (m.silent_args) |args| {
-        for (args) |a| allocator.free(a);
-        allocator.free(args);
-    }
+    allocator.free(configs);
 }

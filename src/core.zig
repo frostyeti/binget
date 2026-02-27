@@ -203,6 +203,34 @@ pub fn installGithub(allocator: std.mem.Allocator, db_conn: db.Database, owner: 
     }
 }
 
+fn selectMode(configs: []registry.InstallModeConfig, skip_prompts: bool) registry.InstallModeConfig {
+    if (configs.len == 1 or skip_prompts) {
+        return configs[0];
+    }
+
+    std.debug.print("\nMultiple installers available. Please select one:\n", .{});
+    for (configs, 0..) |c, i| {
+        const name = c.name orelse c.type;
+        std.debug.print("[{}] {s} ({s})\n", .{ i, name, c.type });
+    }
+
+    const stdin = std.fs.File.stdin().deprecatedReader();
+    var buf: [32]u8 = undefined;
+    while (true) {
+        std.debug.print("Selection [0]: ", .{});
+        if (stdin.readUntilDelimiterOrEof(&buf, '\n') catch null) |line| {
+            const trimmed = std.mem.trim(u8, line, "\r ");
+            if (trimmed.len == 0) return configs[0];
+            if (std.fmt.parseInt(usize, trimmed, 10)) |idx| {
+                if (idx < configs.len) return configs[idx];
+            } else |_| {}
+        } else {
+            return configs[0];
+        }
+        std.debug.print("Invalid selection.\n", .{});
+    }
+}
+
 pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version_opt: ?[]const u8, mode: install_cmd.InstallMode, skip_prompts: bool) !void {
     std.debug.print("Resolving package '{s}' from default registry...\n", .{id});
 
@@ -269,28 +297,42 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
 
     switch (mode) {
         .shim => {
-            active_mode = manifest.install_modes.shim;
+            if (manifest.install_modes.shim) |m| {
+                active_mode = selectMode(m, skip_prompts);
+            }
             if (active_mode == null) {
-                active_mode = manifest.install_modes.user;
-                final_mode = .user;
+                if (manifest.install_modes.user) |m| {
+                    active_mode = selectMode(m, skip_prompts);
+                    final_mode = .user;
+                }
             }
         },
         .user => {
-            active_mode = manifest.install_modes.user;
+            if (manifest.install_modes.user) |m| {
+                active_mode = selectMode(m, skip_prompts);
+            }
             if (active_mode == null) {
-                active_mode = manifest.install_modes.shim;
-                final_mode = .shim;
+                if (manifest.install_modes.shim) |m| {
+                    active_mode = selectMode(m, skip_prompts);
+                    final_mode = .shim;
+                }
             }
         },
         .global => {
-            active_mode = manifest.install_modes.global;
-            if (active_mode == null) {
-                active_mode = manifest.install_modes.user;
-                final_mode = .user;
+            if (manifest.install_modes.global) |m| {
+                active_mode = selectMode(m, skip_prompts);
             }
             if (active_mode == null) {
-                active_mode = manifest.install_modes.shim;
-                final_mode = .shim;
+                if (manifest.install_modes.user) |m| {
+                    active_mode = selectMode(m, skip_prompts);
+                    final_mode = .user;
+                }
+            }
+            if (active_mode == null) {
+                if (manifest.install_modes.shim) |m| {
+                    active_mode = selectMode(m, skip_prompts);
+                    final_mode = .shim;
+                }
             }
         },
     }

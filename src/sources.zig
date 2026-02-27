@@ -22,7 +22,7 @@ fn getRegistryUrl(allocator: std.mem.Allocator) ![]const u8 {
     if (env_map.get("BINGET_REGISTRY")) |url| {
         return try allocator.dupe(u8, url);
     }
-    return try allocator.dupe(u8, "https://raw.githubusercontent.com/frostyeti/binget-pkgs/dev");
+    return try allocator.dupe(u8, "https://raw.githubusercontent.com/frostyeti/binget-pkgs/master");
 }
 
 pub fn parseAndRun(allocator: std.mem.Allocator, args: [][:0]u8) !void {

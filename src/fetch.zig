@@ -436,30 +436,36 @@ pub fn parseAndRun(allocator: std.mem.Allocator, args: [][:0]u8) !void {
         var best_url: ?[]const u8 = null;
 
         const modes = manifest.install_modes;
-        if (modes.user) |m| {
-            if (m.url) |u| {
-                const score = scoreFormat(m.format, format_hint) + 5;
-                if (score > best_score) {
-                    best_score = score;
-                    best_url = u;
+        if (modes.user) |ml| {
+            for (ml) |m| {
+                if (m.url) |u| {
+                    const score = scoreFormat(m.format, format_hint) + 5;
+                    if (score > best_score) {
+                        best_score = score;
+                        best_url = u;
+                    }
                 }
             }
         }
-        if (modes.global) |m| {
-            if (m.url) |u| {
-                const score = scoreFormat(m.format, format_hint) + 3;
-                if (score > best_score) {
-                    best_score = score;
-                    best_url = u;
+        if (modes.global) |ml| {
+            for (ml) |m| {
+                if (m.url) |u| {
+                    const score = scoreFormat(m.format, format_hint) + 3;
+                    if (score > best_score) {
+                        best_score = score;
+                        best_url = u;
+                    }
                 }
             }
         }
-        if (modes.shim) |m| {
-            if (m.url) |u| {
-                const score = scoreFormat(m.format, format_hint);
-                if (score > best_score) {
-                    best_score = score;
-                    best_url = u;
+        if (modes.shim) |ml| {
+            for (ml) |m| {
+                if (m.url) |u| {
+                    const score = scoreFormat(m.format, format_hint);
+                    if (score > best_score) {
+                        best_score = score;
+                        best_url = u;
+                    }
                 }
             }
         }

@@ -54,10 +54,10 @@ pub fn scanPackage(allocator: std.mem.Allocator, id: []const u8, version_opt: ?[
 
     var dl_url: ?[]const u8 = null;
 
-    if (manifest.install_modes.shim) |m| {
-        dl_url = m.url;
-    } else if (manifest.install_modes.user) |m| {
-        dl_url = m.url;
+    if (manifest.install_modes.shim) |ml| {
+        if (ml.len > 0) dl_url = ml[0].url;
+    } else if (manifest.install_modes.user) |ml| {
+        if (ml.len > 0) dl_url = ml[0].url;
     }
 
     if (dl_url) |url| {
