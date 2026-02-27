@@ -430,10 +430,29 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
             argv[1] = "install";
             argv[2] = "--exact";
         } else if (std.mem.eql(u8, config.type, "choco")) {
-            argv = try allocator.alloc([]const u8, 3);
-            argv[0] = "choco";
-            argv[1] = "install";
-            argv[2] = "-y";
+            var use_sudo = false;
+            if (builtin.os.tag == .windows and !platform.isAdmin()) {
+                if (platform.hasSudo(allocator)) {
+                    std.debug.print("⚠️  Elevating Chocolatey installation via sudo...\n", .{});
+                    use_sudo = true;
+                } else {
+                    std.debug.print("Error: Administrator privileges required for Chocolatey. Please run your terminal as Administrator.\n", .{});
+                    return error.ElevationRequired;
+                }
+            }
+
+            if (use_sudo) {
+                argv = try allocator.alloc([]const u8, 4);
+                argv[0] = "sudo";
+                argv[1] = "choco";
+                argv[2] = "install";
+                argv[3] = "-y";
+            } else {
+                argv = try allocator.alloc([]const u8, 3);
+                argv[0] = "choco";
+                argv[1] = "install";
+                argv[2] = "-y";
+            }
         }
         defer allocator.free(argv);
 
@@ -503,40 +522,47 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     var args = std.ArrayList([]const u8).empty;
     defer args.deinit(allocator);
 
-    var needs_uac = false;
+    var use_sudo = false;
     const builtin = @import("builtin");
 
     if (builtin.os.tag == .windows) {
-        if (!platform.isAdmin() and mode == .global) {
-            std.debug.print("⚠️  Global installation requested without Administrator privileges. Will prompt for UAC.\n", .{});
-            needs_uac = true;
+        if (!platform.isAdmin()) {
+            if (platform.hasSudo(allocator)) {
+                std.debug.print("⚠️  Elevating native installer via sudo...\n", .{});
+                use_sudo = true;
+            } else {
+                std.debug.print("Error: Administrator privileges required for native installers. Please run your terminal as Administrator.\n", .{});
+                return error.ElevationRequired;
+            }
         }
 
-        var exe_path: []const u8 = undefined;
-        var args_str = std.ArrayList(u8).empty;
-        defer args_str.deinit(allocator);
+        if (use_sudo) {
+            try args.append(allocator, "sudo");
+        }
 
         if (std.mem.eql(u8, format, "msi")) {
-            exe_path = "msiexec.exe";
-            try args_str.writer(allocator).print("'/i', '\"{s}\"'", .{download_path});
+            try args.append(allocator, "msiexec.exe");
+            try args.append(allocator, "/i");
+            try args.append(allocator, download_path);
             if (config.silent_args) |sargs| {
                 for (sargs) |arg| {
-                    try args_str.writer(allocator).print(", '{s}'", .{arg});
+                    try args.append(allocator, arg);
                 }
             } else {
-                try args_str.writer(allocator).print(", '/qb'", .{}); // Default silentish MSI arg
+                try args.append(allocator, "/qb");
             }
         } else if (std.mem.eql(u8, format, "exe") or std.mem.eql(u8, format, "inno") or std.mem.eql(u8, format, "squirrel")) {
-            exe_path = download_path;
+            try args.append(allocator, download_path);
             if (config.silent_args) |sargs| {
-                for (sargs, 0..) |arg, i| {
-                    if (i > 0) try args_str.writer(allocator).print(", ", .{});
-                    try args_str.writer(allocator).print("'{s}'", .{arg});
+                for (sargs) |arg| {
+                    try args.append(allocator, arg);
                 }
             } else if (std.mem.eql(u8, format, "inno")) {
-                try args_str.writer(allocator).print("'/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART'", .{});
+                try args.append(allocator, "/VERYSILENT");
+                try args.append(allocator, "/SUPPRESSMSGBOXES");
+                try args.append(allocator, "/NORESTART");
             } else if (std.mem.eql(u8, format, "squirrel")) {
-                try args_str.writer(allocator).print("'--silent'", .{});
+                try args.append(allocator, "--silent");
             }
         } else {
             std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
@@ -552,47 +578,6 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
             }
             std.debug.print("==============================\n\n", .{});
             return;
-        }
-
-        if (needs_uac) {
-            try args.append(allocator, "powershell");
-            try args.append(allocator, "-NoProfile");
-            try args.append(allocator, "-Command");
-
-            var ps_cmd = std.ArrayList(u8).empty;
-            defer ps_cmd.deinit(allocator);
-            if (args_str.items.len > 0) {
-                try ps_cmd.writer(allocator).print("Start-Process '{s}' -ArgumentList {s} -Wait -Verb RunAs", .{ exe_path, args_str.items });
-            } else {
-                try ps_cmd.writer(allocator).print("Start-Process '{s}' -Wait -Verb RunAs", .{exe_path});
-            }
-            try args.append(allocator, try ps_cmd.toOwnedSlice(allocator));
-        } else {
-            if (std.mem.eql(u8, format, "msi")) {
-                try args.append(allocator, "msiexec.exe");
-                try args.append(allocator, "/i");
-                try args.append(allocator, download_path);
-                if (config.silent_args) |sargs| {
-                    for (sargs) |arg| {
-                        try args.append(allocator, arg);
-                    }
-                } else {
-                    try args.append(allocator, "/qb");
-                }
-            } else {
-                try args.append(allocator, download_path);
-                if (config.silent_args) |sargs| {
-                    for (sargs) |arg| {
-                        try args.append(allocator, arg);
-                    }
-                } else if (std.mem.eql(u8, format, "inno")) {
-                    try args.append(allocator, "/VERYSILENT");
-                    try args.append(allocator, "/SUPPRESSMSGBOXES");
-                    try args.append(allocator, "/NORESTART");
-                } else if (std.mem.eql(u8, format, "squirrel")) {
-                    try args.append(allocator, "--silent");
-                }
-            }
         }
     } else {
         std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});

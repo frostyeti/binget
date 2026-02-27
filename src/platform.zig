@@ -173,6 +173,17 @@ pub fn isAdmin() bool {
     }
 }
 
+pub fn hasSudo(allocator: std.mem.Allocator) bool {
+    var child = std.process.Child.init(&[_][]const u8{ "sudo", "--version" }, allocator);
+    child.stdout_behavior = .Ignore;
+    child.stderr_behavior = .Ignore;
+    const term = child.spawnAndWait() catch return false;
+    switch (term) {
+        .Exited => |code| return code == 0,
+        else => return false,
+    }
+}
+
 pub fn getHomeDir(allocator: std.mem.Allocator) ![]const u8 {
     const builtin = @import("builtin");
     var env_map = try std.process.getEnvMap(allocator);
