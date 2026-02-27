@@ -3,6 +3,7 @@ const core = @import("core.zig");
 const db = @import("db.zig");
 const binget_file = @import("binget_file.zig");
 const platform = @import("platform.zig");
+const windows_utils = @import("windows_utils.zig");
 
 pub const InstallMode = enum {
     global,
@@ -79,6 +80,7 @@ fn printHelp() void {
 
 pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target: []const u8, mode: InstallMode, skip_prompts: bool) !void {
     const is_github_prefix = std.mem.startsWith(u8, target, "github.com/");
+    const is_gh_prefix = std.mem.startsWith(u8, target, "gh:");
     var parts = std.mem.splitScalar(u8, target, '@');
     const name_part = parts.next().?;
     const version_opt = parts.next();
@@ -86,10 +88,12 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
     // Check if name_part has a slash, meaning it's an owner/repo format
     const has_slash = std.mem.indexOfScalar(u8, name_part, '/') != null;
 
-    if (is_github_prefix or has_slash) {
+    if (is_github_prefix or is_gh_prefix or has_slash) {
         var repo_path = name_part;
         if (is_github_prefix) {
             repo_path = name_part["github.com/".len..];
+        } else if (is_gh_prefix) {
+            repo_path = name_part["gh:".len..];
         }
         var repo_parts = std.mem.splitScalar(u8, repo_path, '/');
         const owner = repo_parts.next() orelse return error.InvalidTarget;
@@ -103,6 +107,14 @@ pub fn installTarget(allocator: std.mem.Allocator, db_conn: db.Database, target:
             try builtin_runtimes.install(allocator, db_conn, id, version_opt, mode);
         } else {
             try core.installRegistryId(allocator, db_conn, id, version_opt, mode, skip_prompts);
+        }
+    }
+
+    if (@import("builtin").os.tag == .windows) {
+        if (mode == .user or mode == .shim) {
+            const bin_dir = try platform.getInstallDir(allocator, false);
+            defer allocator.free(bin_dir);
+            try windows_utils.ensureInUserPath(allocator, bin_dir);
         }
     }
 }

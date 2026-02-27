@@ -259,7 +259,33 @@ pub fn main() !void {
             const version = @import("version.zig");
             version.printVersion();
         } else {
-            std.debug.print("Command: {s}\n", .{cmd});
+            // Assume it's an implicit install command
+            const share_dir = try platform.getBingetShareDir(allocator);
+            defer allocator.free(share_dir);
+            try std.fs.cwd().makePath(share_dir);
+
+            const db_path = try std.fs.path.join(allocator, &.{ share_dir, "binget.db" });
+            defer allocator.free(db_path);
+            const db_path_z = try allocator.dupeZ(u8, db_path);
+            defer allocator.free(db_path_z);
+
+            var db_conn = try db.Database.open(db_path_z);
+            defer db_conn.close();
+
+            var new_args = std.ArrayList([:0]u8).empty;
+            defer new_args.deinit(allocator);
+            try new_args.append(allocator, args[0]);
+
+            const install_arg = try allocator.dupeZ(u8, "install");
+            defer allocator.free(install_arg);
+            try new_args.append(allocator, install_arg);
+
+            for (args[1..]) |arg| {
+                try new_args.append(allocator, arg);
+            }
+
+            const install_cmd = @import("install_cmd.zig");
+            try install_cmd.parseAndRun(allocator, db_conn, new_args.items);
         }
     } else {
         std.debug.print("{s}", .{global_help});

@@ -81,3 +81,28 @@ pub fn applyRegistryKeys(allocator: std.mem.Allocator, keys: []const registry.Re
         }
     }
 }
+
+pub fn ensureInUserPath(allocator: std.mem.Allocator, bin_dir: []const u8) !void {
+    const builtin = @import("builtin");
+    if (builtin.os.tag != .windows) return;
+
+    // Use PowerShell to check and update the user PATH
+    var script = std.ArrayList(u8).empty;
+    defer script.deinit(allocator);
+
+    try script.writer(allocator).print(
+        \\$target = "{s}"
+        \\$path = [Environment]::GetEnvironmentVariable("PATH", "User")
+        \\if ($path -ne $null -and $path.Split(';') -contains $target) {{
+        \\    exit 0
+        \\}}
+        \\$newPath = if ($path) {{ $path + ";" + $target }} else {{ $target }}
+        \\[Environment]::SetEnvironmentVariable("PATH", $newPath, "User")
+        \\Write-Host "Added $target to User PATH"
+    , .{bin_dir});
+
+    var child = std.process.Child.init(&[_][]const u8{ "powershell", "-NoProfile", "-Command", script.items }, allocator);
+    child.stdout_behavior = .Inherit;
+    child.stderr_behavior = .Inherit;
+    _ = try child.spawnAndWait();
+}
