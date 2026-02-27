@@ -19,6 +19,7 @@
 - Always prefer Zig native libraries, standard library, and cross-compilation friendly C code over complex system dependencies.
 - Keep `build.zig` and `build.zig.zon` clean and up to date.
 - Use `zig fmt` to keep the code formatted and consistent.
+- **Runtimes vs. Packages Rule**: Runtimes (e.g., Java, PHP, Perl, Kotlin) are *not* standard packages and should not get JSON manifests in the `binget-pkgs` repository. Instead, they must be implemented as `.zig` files inside `src/runtimes/` and wired into `src/runtimes/builtin.zig`.
 
 ## Project Structure
 
