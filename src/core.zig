@@ -279,10 +279,12 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
     const os_str: []const u8 = os_tag;
     // We used to map macos to darwin, but binget-pkgs uses macos
 
-    const arch_str: []const u8 = arch_tag;
-    // We used to map x86_64 to amd64, but binget-pkgs uses x86_64
+    var arch_str: []const u8 = arch_tag;
+    if (std.mem.eql(u8, arch_tag, "x86_64")) {
+        arch_str = "amd64";
+    }
 
-    const platform_id = try std.fmt.allocPrint(allocator, "{s}-{s}", .{ os_str, arch_str });
+    const platform_id = try std.fmt.allocPrint(allocator, "{s}.{s}", .{ os_str, arch_str });
     defer allocator.free(platform_id);
 
     std.debug.print("Fetching install manifest for {s}...\n", .{platform_id});
@@ -619,7 +621,19 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
     const term = try child.spawnAndWait();
     switch (term) {
         .Exited => |code| {
-            if (code != 0) {
+            var valid_exit = false;
+            if (code == 0) {
+                valid_exit = true;
+            } else if (config.valid_exit_codes) |codes| {
+                for (codes) |valid_code| {
+                    if (code == valid_code) {
+                        valid_exit = true;
+                        break;
+                    }
+                }
+            }
+
+            if (!valid_exit) {
                 std.debug.print("Installer exited with error code {}\n", .{code});
                 return error.InstallFailed;
             }

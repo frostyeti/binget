@@ -177,6 +177,7 @@ pub const InstallModeConfig = struct {
     build_engine: ?[]const u8 = null,
     build_args: ?[][]const u8 = null,
     silent_args: ?[][]const u8 = null,
+    valid_exit_codes: ?[]i64 = null,
 };
 
 pub const PlatformManifest = struct {
@@ -290,6 +291,15 @@ fn parseSingleInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json
         config.silent_args = args;
     }
 
+    if (obj.get("valid_exit_codes")) |v| {
+        const arr = v.array;
+        var codes = try allocator.alloc(i64, arr.items.len);
+        for (arr.items, 0..) |item, i| {
+            codes[i] = item.integer;
+        }
+        config.valid_exit_codes = codes;
+    }
+
     return config;
 }
 
@@ -392,6 +402,9 @@ fn freeInstallModeConfigs(allocator: std.mem.Allocator, configs: []InstallModeCo
         if (m.silent_args) |args| {
             for (args) |a| allocator.free(a);
             allocator.free(args);
+        }
+        if (m.valid_exit_codes) |codes| {
+            allocator.free(codes);
         }
     }
     allocator.free(configs);
