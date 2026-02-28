@@ -474,6 +474,15 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
                     std.debug.print("System package manager exited with code {}\n", .{code});
                     return error.SystemPackageManagerFailed;
                 }
+                const z_id = try allocator.dupeZ(u8, id);
+                defer allocator.free(z_id);
+                const z_version = try allocator.dupeZ(u8, version_to_install);
+                defer allocator.free(z_version);
+                const install_record_tmp = try std.fmt.allocPrint(allocator, "{s}:{s}", .{ config.type, pkg_name });
+                defer allocator.free(install_record_tmp);
+                const install_record = try allocator.dupeZ(u8, install_record_tmp);
+                defer allocator.free(install_record);
+                try db_conn.recordInstall(z_id, z_version, install_record, final_mode == .global);
             },
             else => return error.SystemPackageManagerFailed,
         }
@@ -490,7 +499,6 @@ pub fn installRegistryId(allocator: std.mem.Allocator, db_conn: db.Database, id:
 }
 
 fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id: []const u8, version: []const u8, config: registry.InstallModeConfig, mode: install_cmd.InstallMode) !void {
-    _ = db_conn;
     if (config.url == null) return error.InvalidManifest;
 
     if (mode == .shim) {
@@ -564,6 +572,13 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
             } else if (std.mem.eql(u8, format, "squirrel")) {
                 try args.append(allocator, "--silent");
             }
+        } else if (std.mem.eql(u8, format, "msix") or std.mem.eql(u8, format, "appx")) {
+            try args.append(allocator, "powershell");
+            try args.append(allocator, "-NoProfile");
+            try args.append(allocator, "-Command");
+            const ps_cmd = try std.fmt.allocPrint(allocator, "Add-AppxPackage -Path '{s}'", .{download_path});
+            defer allocator.free(ps_cmd);
+            try args.append(allocator, try allocator.dupe(u8, ps_cmd));
         } else {
             std.debug.print("\n=== SYSTEM INSTALLER READY ===\n", .{});
             std.debug.print("Automatic execution is not fully supported for this format ({s}) on this OS.\n", .{format});
@@ -622,6 +637,33 @@ fn executeNativeInstaller(allocator: std.mem.Allocator, db_conn: db.Database, id
                 std.debug.print("Installer exited with error code {}\n", .{code});
                 return error.InstallFailed;
             }
+            
+            const z_id = try allocator.dupeZ(u8, id);
+            defer allocator.free(z_id);
+            const z_version = try allocator.dupeZ(u8, version);
+            defer allocator.free(z_version);
+            
+            var uninstall_data: []const u8 = "installer:manual";
+            if (config.uninstall_cmd) |ucmd| {
+                uninstall_data = try std.fmt.allocPrint(allocator, "installer:{s}", .{ucmd});
+            } else if (config.uninstall_args) |uargs| {
+                // If there's no uninstall_cmd but there are args, we can just save a placeholder
+                // and later maybe build a command. But it's easier to expect manifest to provide uninstall_cmd
+                var joined = std.ArrayList(u8).empty;
+                defer joined.deinit(allocator);
+                try joined.appendSlice(allocator, "installer:");
+                for (uargs) |arg| {
+                    try joined.appendSlice(allocator, arg);
+                    try joined.appendSlice(allocator, " ");
+                }
+                uninstall_data = try joined.toOwnedSlice(allocator);
+            }
+            
+            const install_record = try allocator.dupeZ(u8, uninstall_data);
+            defer allocator.free(install_record);
+            
+            try db_conn.recordInstall(z_id, z_version, install_record, mode == .global);
+            
             std.debug.print("Installation completed successfully.\n", .{});
         },
         else => {

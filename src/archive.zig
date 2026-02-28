@@ -9,6 +9,9 @@ pub fn downloadFile(allocator: std.mem.Allocator, url: []const u8, out_path: []c
 
     var req = try client.request(.GET, uri, .{
         .redirect_behavior = @enumFromInt(5), // allow 5 redirects
+        .headers = .{
+            .accept_encoding = .omit,
+        },
     });
     defer req.deinit();
 
@@ -202,23 +205,49 @@ pub fn extractArchive(allocator: std.mem.Allocator, archive_path: []const u8, ou
         return;
     }
 
-    std.debug.print("Native extraction unsupported for this format, falling back to system tar...\n", .{});
+    std.debug.print("Native extraction unsupported for this format, falling back to system tools...\n", .{});
 
-    // Fallback to system tar
-    const argv = &[_][]const u8{ "tar", "-xf", archive_path, "-C", out_dir_path };
-    var child = std.process.Child.init(argv, allocator);
-    child.stdout_behavior = .Ignore;
-    child.stderr_behavior = .Inherit;
+    if (builtin.os.tag == .windows and (std.ascii.endsWithIgnoreCase(original_url, ".zip") or std.ascii.endsWithIgnoreCase(original_url, ".nupkg"))) {
+        const abs_archive = try std.fs.cwd().realpathAlloc(allocator, archive_path);
+        defer allocator.free(abs_archive);
+        const abs_out = try std.fs.cwd().realpathAlloc(allocator, out_dir_path);
+        defer allocator.free(abs_out);
 
-    const term = try child.spawnAndWait();
-    switch (term) {
-        .Exited => |code| {
-            if (code != 0) {
-                std.debug.print("tar exited with code {}\n", .{code});
-                return error.ExtractFailed;
-            }
-        },
-        else => return error.ExtractFailed,
+        const ps_cmd = try std.fmt.allocPrint(allocator, "Expand-Archive -Path '{s}' -DestinationPath '{s}' -Force", .{ abs_archive, abs_out });
+        defer allocator.free(ps_cmd);
+
+        const argv = &[_][]const u8{ "powershell", "-NoProfile", "-Command", ps_cmd };
+        var child = std.process.Child.init(argv, allocator);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Inherit;
+
+        const term = try child.spawnAndWait();
+        switch (term) {
+            .Exited => |code| {
+                if (code != 0) {
+                    std.debug.print("powershell Expand-Archive exited with code {}\n", .{code});
+                    return error.ExtractFailed;
+                }
+            },
+            else => return error.ExtractFailed,
+        }
+    } else {
+        // Fallback to system tar
+        const argv = &[_][]const u8{ "tar", "--force-local", "-xf", archive_path, "-C", out_dir_path };
+        var child = std.process.Child.init(argv, allocator);
+        child.stdout_behavior = .Ignore;
+        child.stderr_behavior = .Inherit;
+
+        const term = try child.spawnAndWait();
+        switch (term) {
+            .Exited => |code| {
+                if (code != 0) {
+                    std.debug.print("tar exited with code {}\n", .{code});
+                    return error.ExtractFailed;
+                }
+            },
+            else => return error.ExtractFailed,
+        }
     }
 }
 
@@ -230,9 +259,16 @@ fn extractNative(allocator: std.mem.Allocator, archive_path: []const u8, out_dir
     defer file.close();
 
     if (std.ascii.endsWithIgnoreCase(original_url, ".zip") or std.ascii.endsWithIgnoreCase(original_url, ".nupkg")) {
+        const builtin = @import("builtin");
+        if (builtin.os.tag == .windows) {
+            return false; // Skip native zip on windows to avoid panic in std.zip, fallback to powershell
+        }
         var read_buf: [8192]u8 = undefined;
         var file_reader = file.reader(&read_buf);
-        try std.zip.extract(out_dir, &file_reader, .{});
+        std.zip.extract(out_dir, &file_reader, .{}) catch |err| {
+            std.debug.print("Native zip extraction failed ({}), falling back to system tools...\n", .{err});
+            return false;
+        };
         return true;
     } else if (std.ascii.endsWithIgnoreCase(original_url, ".deb")) {
         const ar_out = try std.fs.path.join(allocator, &.{ out_dir_path, "_data_tar_from_deb" });

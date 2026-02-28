@@ -178,6 +178,8 @@ pub const InstallModeConfig = struct {
     build_args: ?[][]const u8 = null,
     silent_args: ?[][]const u8 = null,
     valid_exit_codes: ?[]i64 = null,
+    uninstall_cmd: ?[]const u8 = null,
+    uninstall_args: ?[][]const u8 = null,
 };
 
 pub const PlatformManifest = struct {
@@ -290,6 +292,17 @@ fn parseSingleInstallModeConfig(allocator: std.mem.Allocator, mode_val: std.json
         }
         config.silent_args = args;
     }
+
+    if (obj.get("uninstall_args")) |v| {
+        const args_arr = v.array;
+        var args = try allocator.alloc([]const u8, args_arr.items.len);
+        for (args_arr.items, 0..) |arg_item, i| {
+            args[i] = try allocator.dupe(u8, arg_item.string);
+        }
+        config.uninstall_args = args;
+    }
+
+    if (obj.get("uninstall_cmd")) |v| config.uninstall_cmd = try allocator.dupe(u8, v.string);
 
     if (obj.get("valid_exit_codes")) |v| {
         const arr = v.array;
